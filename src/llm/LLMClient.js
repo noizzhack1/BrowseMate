@@ -466,10 +466,10 @@ User Request: ${userPrompt}`;
   }
 
   /**
-   * Task B: Actions LLM call - generates executable JavaScript code
+   * Task B: Actions LLM call - generates structured action parameters
    * @param {string} context - Page HTML context
    * @param {{type: string, target: string, value?: string}} action - Action to perform
-   * @returns {Promise<{code: string, explanation: string}>}
+   * @returns {Promise<{selector: string, actionType: string, value: string, explanation: string}>}
    */
   async actionsCall(context, action) {
     console.log('[LLMClient.actionsCall] Starting actions call');
@@ -483,7 +483,7 @@ User Request: ${userPrompt}`;
     }
 
     console.log('[LLMClient.actionsCall] Building action prompt...');
-    const actionPrompt = `You are a browser automation code generator. Generate executable JavaScript code to perform the requested action on the page.
+    const actionPrompt = `You are a browser automation assistant. Determine the precise CSS selector and action parameters to perform the requested action on the page.
 
 Page HTML (first 10000 chars):
 ${context.substring(0, 10000)}
@@ -493,15 +493,15 @@ Action to perform:
 - Target: ${action.target}
 ${action.value ? `- Value: ${action.value}` : ''}
 
-Generate JavaScript code that:
-1. Finds the target element using the page HTML structure
-2. Performs the action (${action.type})
-3. Returns true if successful
+Analyze the HTML and identify the unique CSS selector for the target element.
 
 Return a JSON object in this exact format:
-{"code": "your JavaScript code here", "explanation": "brief explanation of what the code does"}
-
-The code should be a single expression or statement that can be executed with eval(). Use document.querySelector(), document.querySelectorAll(), or similar DOM methods.
+{
+  "selector": "unique CSS selector for the target element",
+  "actionType": "click | fill | scroll | hover",
+  "value": "value to type (for fill actions) or 'bottom'/'top' (for scroll)",
+  "explanation": "brief explanation of what will be done"
+}
 
 Return ONLY valid JSON, no other text.`;
 
@@ -509,7 +509,7 @@ Return ONLY valid JSON, no other text.`;
       console.log('[LLMClient.actionsCall] Calling generateCompletion...');
       const response = await this.generateCompletion(actionPrompt, {
         temperature: 0.2,
-        maxTokens: 1024
+        maxTokens: 512
       });
       console.log('[LLMClient.actionsCall] Response received, length:', response?.length || 0);
       console.log('[LLMClient.actionsCall] Response:', response);
@@ -533,25 +533,26 @@ Return ONLY valid JSON, no other text.`;
       console.log('[LLMClient.actionsCall] Parsing JSON...');
       const result = JSON.parse(jsonStr);
       console.log('[LLMClient.actionsCall] JSON parsed successfully');
-      console.log('[LLMClient.actionsCall] Code length:', result.code?.length || 0);
-      console.log('[LLMClient.actionsCall] Code:', result.code);
+      console.log('[LLMClient.actionsCall] Selector:', result.selector);
       
       // Validate result structure
-      if (!result.code) {
-        console.error('[LLMClient.actionsCall] Missing code field in result');
-        throw new Error('LLM response missing code field');
+      if (!result.selector || !result.actionType) {
+        console.error('[LLMClient.actionsCall] Missing required fields in result');
+        throw new Error('LLM response missing selector or actionType');
       }
 
       console.log('[LLMClient.actionsCall] Actions call successful, returning result');
       return {
-        code: result.code,
-        explanation: result.explanation || 'Action executed'
+        selector: result.selector,
+        actionType: result.actionType,
+        value: result.value || '',
+        explanation: result.explanation || 'Action prepared'
       };
     } catch (error) {
       console.error('[LLMClient.actionsCall] Actions LLM call failed:', error);
       console.error('[LLMClient.actionsCall] Error message:', error.message);
       console.error('[LLMClient.actionsCall] Error stack:', error.stack);
-      throw new Error(`Failed to generate action code: ${error.message}`);
+      throw new Error(`Failed to generate action parameters: ${error.message}`);
     }
   }
 }
