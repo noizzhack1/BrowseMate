@@ -159,7 +159,9 @@ function appendMessage(role, text) {
 }
 
 /**
- * Call Hugging Face API with the user's message
+ * Call the configured LLM with the user's message.
+ * Uses Hugging Face router for \"config\" providers and a custom
+ * OpenAI-compatible endpoint for the \"local\" provider.
  * @param {string} userText
  * @param {boolean} includeContext
  * @returns {Promise<string>}
@@ -170,8 +172,30 @@ async function callHuggingFaceAPI(userText, includeContext = false) {
     const result = await chrome.storage.sync.get('browsemate_settings');
     const settings = result.browsemate_settings;
 
-    if (!settings || !settings.hfToken) {
-      return "Please configure your Hugging Face API token in Settings (click ⚙️ button).";
+    if (!settings) {
+      return "Please configure your model settings first (click ⚙️ button).";
+    }
+
+    const providerType = settings.providerType || 'config';
+
+    // Determine endpoint, model, and auth based on provider
+    let endpoint = 'https://router.huggingface.co/v1/chat/completions';
+    let model = settings.hfModel;
+    let token = settings.hfToken || '';
+
+    if (providerType === 'local') {
+      if (!settings.localBaseUrl || !settings.localModel) {
+        return "Please configure your local model URL and name in Settings.";
+      }
+      const base = settings.localBaseUrl.replace(/\/+$/, '');
+      endpoint = `${base}/chat/completions`;
+      model = settings.localModel;
+      token = settings.localToken || ''; // optional
+    } else {
+      // Remote/HF provider requires token
+      if (!token) {
+        return "Please configure your Hugging Face API token in Settings (click ⚙️ button).";
+      }
     }
 
     // Prepare the message content
@@ -194,28 +218,30 @@ User Question: ${userText}`;
       }
     }
 
+    // Build headers dynamically (local model may not need auth)
+    const headers = {
+      'Content-Type': 'application/json'
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
     // Use OpenAI-compatible chat completion format
-    const response = await fetch(
-      'https://router.huggingface.co/v1/chat/completions',
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${settings.hfToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: settings.hfModel,
-          messages: [
-            {
-              role: 'user',
-              content: messageContent
-            }
-          ],
-          max_tokens: settings.maxTokens || 1024,
-          temperature: settings.temperature || 0.7
-        })
-      }
-    );
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: 'user',
+            content: messageContent
+          }
+        ],
+        max_tokens: settings.maxTokens || 1024,
+        temperature: settings.temperature || 0.7
+      })
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -236,8 +262,8 @@ User Question: ${userText}`;
     }
 
   } catch (error) {
-    console.error('Hugging Face API Error:', error);
-    return `Error: ${error.message}\n\nPlease check your settings and try again.`;
+    console.error('LLM API Error:', error);
+    return `Error: ${error.message}\n\nPlease check your model settings and try again.`;
   }
 }
 

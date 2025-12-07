@@ -131,6 +131,64 @@
     .back-link:hover {
       text-decoration: underline;
     }
+
+    .models-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .model-card {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: 6px;
+      border: 1px solid #e0e0e0;
+      background: #ffffff;
+      cursor: pointer;
+    }
+
+    .model-card input[type="radio"] {
+      margin-top: 3px;
+    }
+
+    .model-card-content {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .model-card-title {
+      font-weight: 600;
+      font-size: 14px;
+      color: #111827;
+    }
+
+    .model-card-meta {
+      font-size: 12px;
+      color: #6b7280;
+    }
+
+    .local-model-form {
+      margin-top: 8px;
+      padding: 10px 12px;
+      border-radius: 6px;
+      border: 1px dashed #d1d5db;
+      background: #f9fafb;
+    }
+
+    .local-model-form-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .local-model-form-row input {
+      width: 100%;
+    }
   </style>
 </head>
 <body>
@@ -156,14 +214,35 @@
       </div>
 
       <div class="form-group">
-        <label for="hfModel">Model</label>
-        <select id="hfModel" name="hfModel">
-          <option value="Qwen/Qwen2.5-Coder-32B-Instruct">Qwen2.5-Coder-32B-Instruct</option>
-          <option value="Qwen/Qwen2.5-Coder-14B-Instruct">Qwen2.5-Coder-14B-Instruct</option>
-          <option value="Qwen/Qwen2.5-Coder-7B-Instruct">Qwen2.5-Coder-7B-Instruct</option>
-          <option value="Qwen/Qwen2.5-Coder-3B-Instruct">Qwen2.5-Coder-3B-Instruct</option>
-        </select>
-        <small>Select the Qwen Coder model you want to use</small>
+        <label>Models</label>
+        <div id="modelsList" class="models-list"></div>
+        <input type="hidden" id="hfModel" name="hfModel" />
+        <small>Select which provider/model to use. Default providers come from <code>config/llm-config.json</code>.</small>
+
+        <div class="local-model-form">
+          <button type="button" id="addLocalModelBtn" class="btn btn-secondary">Add local model</button>
+          <div id="localModelFields" class="local-model-form-row" style="display:none;">
+            <input
+              type="text"
+              id="localName"
+              name="localName"
+              placeholder="Local model display name (e.g. LM Studio – Qwen)"
+            />
+            <input
+              type="text"
+              id="localBaseUrl"
+              name="localBaseUrl"
+              placeholder="http://localhost:1234/v1"
+            />
+            <input
+              type="text"
+              id="localModel"
+              name="localModel"
+              placeholder="local-model-id (as your server expects)"
+            />
+            <small>Fill these and click Save Settings. The local model will appear as a provider in the list above.</small>
+          </div>
+        </div>
       </div>
 
       <div class="form-group">
