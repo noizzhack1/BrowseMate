@@ -24,37 +24,53 @@ const sidebarRootEl = document.querySelector(".sidebar-root");
 // =========================
 
 /**
- * Get the current page context (URL, title, and visible text)
- * @returns {Promise<{url: string, title: string, text: string}>}
+ * Get the current page context (URL, title, visible text, and HTML structure)
+ * @returns {Promise<{url: string, title: string, text: string, html: string}>}
  */
 async function getPageContext() {
+  // Query the active tab in the current window
   try {
+    // Get reference to the currently active tab
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab || !tab.id) return { url: "", title: "", text: "" };
+    
+    // Return empty context if no valid tab is found
+    if (!tab || !tab.id) return { url: "", title: "", text: "", html: "" };
 
+    // Execute script in the context of the active tab to extract page information
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: () => {
+        // Clone the body to extract text without modifying the actual DOM
         const clone = document.body.cloneNode(true);
+        
+        // Remove script, style, and noscript elements from the clone (not needed for text extraction)
         const scripts = clone.querySelectorAll("script, style, noscript");
         scripts.forEach((el) => el.remove());
 
-        const text = clone.innerText.replace(/\s+/g, " ").trim().slice(0, 3000);
+        // Extract visible text content, normalize whitespace (no character limit)
+        const text = clone.innerText.replace(/\s+/g, " ").trim();
 
+        // Get the full HTML structure for action execution (selectors, element identification)
+        const html = document.body.outerHTML;
+
+        // Return comprehensive page context object
         return {
-          url: window.location.href,
-          title: document.title,
-          text
+          url: window.location.href,   // Current page URL
+          title: document.title,        // Page title
+          text,                         // Visible text content (cleaned)
+          html                          // Full HTML structure for Task B actions
         };
       }
     });
 
+    // Return the result if valid, otherwise return empty context
     return results && results[0] && results[0].result
       ? results[0].result
-      : { url: "", title: "", text: "" };
+      : { url: "", title: "", text: "", html: "" };
   } catch (error) {
+    // Log error and return empty context on failure
     console.error("Error getting page context:", error);
-    return { url: "", title: "", text: "" };
+    return { url: "", title: "", text: "", html: "" };
   }
 }
 
