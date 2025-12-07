@@ -1,4 +1,4 @@
-// Settings page script - manages Hugging Face configuration
+// Settings page script - manages LLM configuration
 
 const settingsForm = document.getElementById('settingsForm');
 const statusMessage = document.getElementById('statusMessage');
@@ -7,22 +7,51 @@ const testBtn = document.getElementById('testBtn');
 // Default settings
 const DEFAULT_SETTINGS = {
   hfToken: '',
-  hfModel: 'Qwen/Qwen2.5-Coder-32B-Instruct',
+  selectedLLM: '',
   maxTokens: 1024,
   temperature: 0.7
 };
+
+/**
+ * Load available LLMs from config
+ */
+async function loadAvailableLLMs() {
+  try {
+    await llmClient.initialize();
+    const llms = llmClient.getAvailableLLMs();
+
+    const selectElement = document.getElementById('selectedLLM');
+    selectElement.innerHTML = '';
+
+    llms.forEach(llm => {
+      const option = document.createElement('option');
+      option.value = llm.name;
+      option.textContent = `${llm.name} (${llm.model})`;
+      selectElement.appendChild(option);
+    });
+
+    return llms;
+  } catch (error) {
+    showStatus('Error loading LLM options: ' + error.message, 'error');
+    return [];
+  }
+}
 
 /**
  * Load settings from Chrome storage
  */
 async function loadSettings() {
   try {
+    // First load available LLMs
+    const llms = await loadAvailableLLMs();
+
+    // Then load user settings
     const result = await chrome.storage.sync.get('browsemate_settings');
     const settings = result.browsemate_settings || DEFAULT_SETTINGS;
 
     // Populate form fields
     document.getElementById('hfToken').value = settings.hfToken || '';
-    document.getElementById('hfModel').value = settings.hfModel || DEFAULT_SETTINGS.hfModel;
+    document.getElementById('selectedLLM').value = settings.selectedLLM || (llms[0]?.name || '');
     document.getElementById('maxTokens').value = settings.maxTokens || DEFAULT_SETTINGS.maxTokens;
     document.getElementById('temperature').value = settings.temperature || DEFAULT_SETTINGS.temperature;
   } catch (error) {
@@ -38,24 +67,31 @@ async function saveSettings(event) {
 
   const settings = {
     hfToken: document.getElementById('hfToken').value.trim(),
-    hfModel: document.getElementById('hfModel').value,
+    selectedLLM: document.getElementById('selectedLLM').value,
     maxTokens: parseInt(document.getElementById('maxTokens').value),
     temperature: parseFloat(document.getElementById('temperature').value)
   };
 
   // Validate token
   if (!settings.hfToken) {
-    showStatus('Please enter a Hugging Face API token', 'error');
+    showStatus('Please enter an API token', 'error');
     return;
   }
 
-  if (!settings.hfToken.startsWith('hf_')) {
-    showStatus('Warning: Hugging Face tokens usually start with "hf_"', 'error');
+  if (!settings.selectedLLM) {
+    showStatus('Please select an LLM provider', 'error');
     return;
   }
 
   try {
     await chrome.storage.sync.set({ browsemate_settings: settings });
+
+    // Update the LLM client with new settings
+    if (llmClient.isInitialized) {
+      llmClient.currentLLM.token = settings.hfToken;
+      await llmClient.switchLLM(settings.selectedLLM);
+    }
+
     showStatus('Settings saved successfully!', 'success');
   } catch (error) {
     showStatus('Error saving settings: ' + error.message, 'error');
@@ -63,14 +99,19 @@ async function saveSettings(event) {
 }
 
 /**
- * Test the Hugging Face API connection
+ * Test the LLM API connection
  */
 async function testConnection() {
   const token = document.getElementById('hfToken').value.trim();
-  const model = document.getElementById('hfModel').value;
+  const selectedLLM = document.getElementById('selectedLLM').value;
 
   if (!token) {
     showStatus('Please enter an API token first', 'error');
+    return;
+  }
+
+  if (!selectedLLM) {
+    showStatus('Please select an LLM provider first', 'error');
     return;
   }
 
@@ -78,40 +119,31 @@ async function testConnection() {
   testBtn.disabled = true;
 
   try {
-    const response = await fetch(
-      'https://router.huggingface.co/v1/chat/completions',
+    // Initialize LLM client if not already done
+    if (!llmClient.isInitialized) {
+      await llmClient.initialize();
+    }
+
+    // Switch to selected LLM
+    llmClient.selectLLM(selectedLLM);
+
+    // Update token temporarily for test
+    const originalToken = llmClient.currentLLM.token;
+    llmClient.currentLLM.token = token;
+
+    // Test with a simple prompt
+    const response = await llmClient.generateCompletion(
+      "Say 'Hello, test successful!' if you can read this.",
       {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: model,
-          messages: [
-            {
-              role: 'user',
-              content: "Say 'Hello, test successful!' if you can read this."
-            }
-          ],
-          max_tokens: 50,
-          temperature: 0.7
-        })
+        maxTokens: 50,
+        temperature: 0.7
       }
     );
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`API Error (${response.status}): ${errorText}`);
-    }
+    // Restore original token
+    llmClient.currentLLM.token = originalToken;
 
-    const data = await response.json();
-
-    if (data.error) {
-      throw new Error(data.error);
-    }
-
-    showStatus('Connection successful! Model is responding.', 'success');
+    showStatus('Connection successful! Model is responding: ' + response.substring(0, 100), 'success');
   } catch (error) {
     showStatus('Connection failed: ' + error.message, 'error');
   } finally {
