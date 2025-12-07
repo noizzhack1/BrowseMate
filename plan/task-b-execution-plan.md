@@ -53,13 +53,94 @@
 
 | File | Purpose |
 |------|---------|
-| `/src/llm/index.js` | Generic LLM API wrapper (shared dependency) |
+| `/src/llm/llm.config.js` | LLM provider configurations (endpoints, models, headers) |
+| `/src/llm/LLMClient.js` | LLM API wrapper **class** with provider abstraction |
 | `/src/utils/logger.js` | Simple logging utility (shared dependency) |
 | `/src/taskB/diff.js` | HTML change detection - `hasChanged()` (uses `getPageContext().html`) |
 | `/src/taskB/retry.js` | Retry logic - `executeWithRetry()` |
 | `/src/taskB/index.js` | Main entry - `executeAction()`, `callActionsLLM()`, `runCode()` |
 
 > **Note**: No separate `getHTML()` function needed - use existing `getPageContext().html`
+
+---
+
+## LLM Client Class Design
+
+### Class Structure
+
+```javascript
+/**
+ * LLMClient - Generic LLM API wrapper with provider abstraction
+ * Auto-loads settings from chrome.storage on instantiation
+ */
+class LLMClient {
+  constructor() {
+    this.config = null;      // Loaded from llm.config.js
+    this.settings = null;    // Loaded from chrome.storage (API keys, selected model)
+    this.initialized = false;
+    this._initPromise = this._init(); // Auto-initialize
+  }
+
+  // Private: Auto-load config and settings
+  async _init() {}
+
+  // Ensure initialized before any call
+  async _ensureReady() {}
+
+  // Generic chat completion (works with any provider)
+  async chat(messages, options = {}) {}
+
+  // Task A: Planner LLM call - determines intent (question vs action)
+  async plannerCall(context, userPrompt) {}
+
+  // Task B: Actions LLM call - generates executable code
+  async actionsCall(context, action) {}
+}
+```
+
+### Config File Structure (`llm.config.js`)
+
+```javascript
+// Provider configurations - endpoints, headers, response parsing
+const LLM_PROVIDERS = {
+  huggingface: {
+    name: 'Hugging Face',
+    endpoint: 'https://router.huggingface.co/v1/chat/completions',
+    authHeader: (token) => `Bearer ${token}`,
+    models: ['meta-llama/Llama-3.1-8B-Instruct', 'mistralai/Mistral-7B-Instruct-v0.3'],
+    defaultModel: 'meta-llama/Llama-3.1-8B-Instruct'
+  },
+  openai: {
+    name: 'OpenAI',
+    endpoint: 'https://api.openai.com/v1/chat/completions',
+    authHeader: (token) => `Bearer ${token}`,
+    models: ['gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo'],
+    defaultModel: 'gpt-4o-mini'
+  },
+  anthropic: {
+    name: 'Anthropic',
+    endpoint: 'https://api.anthropic.com/v1/messages',
+    authHeader: (token) => token, // Uses x-api-key header
+    models: ['claude-sonnet-4-20250514', 'claude-3-5-haiku-20241022'],
+    defaultModel: 'claude-sonnet-4-20250514'
+  }
+};
+```
+
+### Usage Example
+
+```javascript
+// Create instance - auto-initializes from chrome.storage
+const llm = new LLMClient();
+
+// Task A: Determine user intent
+const plan = await llm.plannerCall(context, "Click the buy button");
+// Returns: { intent: "action", action: { type: "click", target: "buy button" } }
+
+// Task B: Generate executable code
+const code = await llm.actionsCall(context, { type: "click", target: "buy button" });
+// Returns: { code: "document.querySelector('.buy-btn').click()", explanation: "..." }
+```
 
 ---
 
@@ -73,11 +154,18 @@
 - Browser console-based (no external dependencies)
 - Prefix logs with `[BrowseMate]` for easy filtering
 
-### Step 3: Create `/src/llm/index.js`
-- Generic LLM call wrapper function using `fetch()` API
-- Retrieve API key from `chrome.storage.sync` or `chrome.storage.local`
-- Request/response handling with error management
-- **Security**: Keys from chrome.storage only, sanitized logging
+### Step 3a: Create `/src/llm/llm.config.js`
+- Provider configurations object (HuggingFace, OpenAI, Anthropic)
+- Each provider: endpoint URL, auth header format, available models, default model
+- Easily extensible for new providers
+
+### Step 3b: Create `/src/llm/LLMClient.js`
+- **Class-based** LLM API wrapper with provider abstraction
+- **Auto-initializes**: Loads settings from `chrome.storage` automatically in constructor
+- **Generic `chat()` method**: Works with any configured provider
+- **`plannerCall(context, userPrompt)`**: For Task A - returns intent + answer/action
+- **`actionsCall(context, action)`**: For Task B - returns executable code
+- **Security**: Keys from chrome.storage only, sanitized logging, never hardcode keys
 
 ### Step 4: Create `/src/taskB/diff.js`
 - `hasChanged(before, after)` - Compare two HTML strings to detect changes
@@ -105,13 +193,15 @@
 ```
 Step 1 (directories)
     ↓
-Step 2 (logger.js) ←──────┐
-    ↓                     │
-Step 3 (llm/index.js) ←───┤ (used by taskB)
-    ↓                     │
-Step 4 (diff.js) ←────────┤
-    ↓                     │
-Step 5 (retry.js) ←───────┘
+Step 2 (logger.js) ←───────────┐
+    ↓                          │
+Step 3a (llm.config.js)        │
+    ↓                          │
+Step 3b (LLMClient.js) ←───────┤ (used by taskB)
+    ↓                          │
+Step 4 (diff.js) ←─────────────┤
+    ↓                          │
+Step 5 (retry.js) ←────────────┘
     ↓         (depends on diff.js)
 Step 6 (index.js)
     (depends on all above)
@@ -158,7 +248,8 @@ Step 6 (index.js)
 
 - [ ] Step 1: Create Directory Structure
 - [ ] Step 2: Create `/src/utils/logger.js`
-- [ ] Step 3: Create `/src/llm/index.js`
+- [ ] Step 3a: Create `/src/llm/llm.config.js`
+- [ ] Step 3b: Create `/src/llm/LLMClient.js`
 - [ ] Step 4: Create `/src/taskB/diff.js`
 - [ ] Step 5: Create `/src/taskB/retry.js`
 - [ ] Step 6: Create `/src/taskB/index.js`

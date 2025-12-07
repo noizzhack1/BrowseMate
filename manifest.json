@@ -2,7 +2,10 @@
   "manifest_version": 3,
   "name": "BrowseMate",
   "version": "1.0.0",
-  "description": "BrowseMate sidebar chat – quick access chat in Chrome's side panel.",
+  "content_security_policy": { 
+    "extension_pages":"script-src 'self' 'unsafe-eval'; object-src 'self'"
+  },
+  "description": "BrowseMate sidebar chat - quick access chat in Chrome's side panel.",
   "permissions": [
     "sidePanel",
     "activeTab",

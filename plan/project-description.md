@@ -395,7 +395,8 @@ flowchart TB
             B3[retry.js]
         end
         subgraph llm["/llm"]
-            L1[index.js]
+            L1[llm.config.js]
+            L2[LLMClient.js]
         end
         subgraph utils["/utils"]
             U1[logger.js]
@@ -406,15 +407,48 @@ flowchart TB
 ```
 /src
   /taskA
-    index.js          # processRequest, callPlannerLLM, delegateToTaskB
+    index.js          # processRequest, delegateToTaskB
   /taskB
-    index.js          # executeAction, callActionsLLM, runCode
+    index.js          # executeAction, runCode
     diff.js           # hasChanged
     retry.js          # executeWithRetry
   /llm
-    index.js          # Generic LLM call wrapper
+    llm.config.js     # Provider configs (HuggingFace, OpenAI, Anthropic)
+    LLMClient.js      # LLM API wrapper CLASS with plannerCall(), actionsCall()
   /utils
     logger.js         # Simple logging
+```
+
+---
+
+## 🤖 LLM Client Class
+
+### Overview
+The `LLMClient` class provides a unified interface for all LLM API calls with:
+- **Auto-initialization** from `chrome.storage`
+- **Provider abstraction** (HuggingFace, OpenAI, Anthropic)
+- **Model configuration** via `llm.config.js`
+
+### Class Interface
+
+```javascript
+class LLMClient {
+  constructor()                           // Auto-loads settings from chrome.storage
+  
+  async chat(messages, options)           // Generic chat completion
+  async plannerCall(context, userPrompt)  // Task A: Determine intent (question/action)
+  async actionsCall(context, action)      // Task B: Generate executable JS code
+}
+```
+
+### Provider Config (`llm.config.js`)
+
+```javascript
+const LLM_PROVIDERS = {
+  huggingface: { endpoint, models, defaultModel, authHeader },
+  openai:      { endpoint, models, defaultModel, authHeader },
+  anthropic:   { endpoint, models, defaultModel, authHeader }
+};
 ```
 
 ---

@@ -1,4 +1,8 @@
-// BrowseMate Chat - simple in-panel chat UI (no external API calls)
+// BrowseMate Chat - simple in-panel chat UI with Task A orchestrator integration
+// Import Task A orchestrator for processing user requests
+import { processRequest } from './src/taskA/index.js';
+// Import LLMClient for backward compatibility and settings
+import { LLMClient } from './src/llm/LLMClient.js';
 
 // =========================
 // DOM references
@@ -175,59 +179,80 @@ function appendMessage(role, text) {
 }
 
 /**
- * Call LLM API with the user's message using the unified LLM client
+ * Call Task A orchestrator to process user request
+ * This replaces the direct LLM call with the full Task A + Task B flow
  * @param {string} userText
  * @param {boolean} includeContext
  * @returns {Promise<string>}
  */
 async function callLLMAPI(userText, includeContext = false) {
+  console.log('[callLLMAPI] Starting LLM API call');
+  console.log('[callLLMAPI] User text:', userText);
+  console.log('[callLLMAPI] Include context:', includeContext);
+  
   try {
-    // Initialize LLM client if not already done
-    if (!llmClient.isInitialized) {
-      await llmClient.initialize();
-    }
-
-    // Prepare the message content
-    let messageContent = userText;
-
-    // Add page context if requested
+    // Get page context if requested
+    let context = null;
     if (includeContext) {
-      const context = await getPageContext();
-      if (context.url || context.text) {
-        messageContent = `Page Context:
-URL: ${context.url}
-Title: ${context.title}
-
-Page Content (first 3000 chars):
-${context.text}
-
----
-
-User Question: ${userText}`;
-      }
+      console.log('[callLLMAPI] Getting page context...');
+      context = await getPageContext();
+      console.log('[callLLMAPI] Context retrieved:', {
+        url: context.url,
+        title: context.title,
+        textLength: context.text?.length || 0,
+        htmlLength: context.html?.length || 0
+      });
+    } else {
+      console.log('[callLLMAPI] Context not requested, skipping');
     }
 
-    // Load settings from storage for temperature and maxTokens
-    const result = await chrome.storage.sync.get('browsemate_settings');
-    const settings = result.browsemate_settings || {};
+    // Use Task A orchestrator to process the request
+    // Task A will determine if it's a question or action and route accordingly
+    console.log('[callLLMAPI] Calling processRequest...');
+    const result = await processRequest(context, userText);
+    console.log('[callLLMAPI] ProcessRequest completed');
+    console.log('[callLLMAPI] Result type:', result.type);
+    console.log('[callLLMAPI] Result:', result);
 
-    // Generate completion using the LLM client
-    const response = await llmClient.generateCompletion(messageContent, {
-      temperature: settings.temperature || 0.7,
-      maxTokens: settings.maxTokens || 1024
-    });
-
-    return response;
+    // Format the response based on result type
+    if (result.type === 'answer') {
+      // Direct answer to a question
+      console.log('[callLLMAPI] Returning answer:', result.message);
+      return result.message;
+    } else if (result.type === 'action_result') {
+      // Action was executed
+      const status = result.success ? '✓' : '✗';
+      const formattedMessage = `${status} ${result.message}`;
+      console.log('[callLLMAPI] Returning action result:', formattedMessage);
+      return formattedMessage;
+    } else {
+      // Unknown type
+      console.warn('[callLLMAPI] Unknown result type:', result.type);
+      return result.message || 'Unknown response type';
+    }
 
   } catch (error) {
-    console.error('LLM API Error:', error);
+    console.error('[callLLMAPI] Task A processing error:', error);
+    console.error('[callLLMAPI] Error message:', error.message);
+    console.error('[callLLMAPI] Error stack:', error.stack);
 
-    if (error.message.includes('token')) {
+    if (error.message && error.message.includes('token')) {
       return "Please configure your API token in Settings (click ⚙️ button).";
     }
 
-    return `Error: ${error.message}\n\nPlease check your settings and try again.`;
+    return `Error: ${error.message || 'Unknown error'}\n\nPlease check your settings and try again.`;
   }
+}
+
+// Create LLMClient singleton instance for backward compatibility
+// (in case other parts of the code still reference it)
+const llmClient = new LLMClient();
+
+// Make getPageContext available globally for Task B executor
+// (Task B executor uses it internally)
+if (typeof window !== 'undefined') {
+  window.getPageContext = getPageContext;
+  window.llmClient = llmClient;
 }
 
 // =========================
