@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BrowseMate Chat</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="sidebar-root">
+    <!-- Header / Top Bar -->
+    <header class="top-bar">
+      <div class="top-bar__title">
+        <span class="top-bar__logo">⧉</span>
+        <span class="top-bar__text">BrowseMate Chat</span>
+      </div>
+      <button
+        id="chatToggle"
+        class="icon-button top-bar__settings"
+        type="button"
+        aria-label="Toggle chat"
+        aria-pressed="true"
+        title="Hide chat"
+      >
+        💬
+      </button>
+    </header>
+
+    <!-- Chat Panel -->
+    <main class="chat-panel" aria-label="Chat panel">
+      <div
+        id="chatMessages"
+        class="chat-messages"
+        aria-live="polite"
+        aria-label="Chat messages"
+      >
+        <!-- Messages rendered by JavaScript -->
+      </div>
+
+      <form id="chatForm" class="chat-input" autocomplete="off">
+        <textarea
+          id="chatInput"
+          class="chat-input__field"
+          rows="1"
+          placeholder="Type a message and press Enter"
+        ></textarea>
+        <button id="chatSend" class="primary-button chat-input__send" type="submit">
+          Send
+        </button>
+      </form>
+    </main>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>

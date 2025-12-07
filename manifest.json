@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "BrowseMate",
+  "version": "1.0.0",
+  "description": "BrowseMate sidebar chat – quick access chat in Chrome's side panel.",
+  "permissions": [
+    "sidePanel",
+    "activeTab",
+    "scripting"
+  ],
+  "action": {
+    "default_title": "BrowseMate Chat"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "sidebar.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
+
+
