@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 // Load config
-const configPath = path.join(__dirname, 'config.json');
+const configPath = path.join(__dirname, 'config', 'llm-config.json');
 const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
 
 // Select LLM by name (default: first one, or pass as CLI arg)
@@ -15,7 +15,7 @@ if (!llm) {
   process.exit(1);
 }
 
-console.log(`Using LLM: ${llm.name} (${llm.MODEL})`);
+console.log(`Using LLM: ${llm.name} (${llm.MODEL})\n`);
 
 const client = new OpenAI({
   baseURL: llm.baseURL,
@@ -28,15 +28,21 @@ const PROMPT = llm.prompt;
 
 (async () => {
   try {
-    const res = await client.chat.completions.create({
+    const stream = await client.chat.completions.create({
       model: MODEL,
       messages: [{ role: 'user', content: PROMPT }],
       temperature: 0.2,
+      stream: true,
     });
-    console.log(res.choices[0].message.content);
+
+    // Stream tokens as they arrive
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content || '';
+      process.stdout.write(content);
+    }
+    console.log(); // Final newline
   } catch (err) {
-    // Print as much as possible
-    console.error('Auth/Request failed.');
+    console.error('\nAuth/Request failed.');
     console.error('Status:', err.status);
     try { console.error('Body:', await err.response.text()); } catch {}
     console.error('Message:', err.message);
