@@ -14,16 +14,27 @@
         <span class="top-bar__logo">⧉</span>
         <span class="top-bar__text">BrowseMate Chat</span>
       </div>
-      <button
-        id="chatToggle"
-        class="icon-button top-bar__settings"
-        type="button"
-        aria-label="Toggle chat"
-        aria-pressed="true"
-        title="Hide chat"
-      >
-        💬
-      </button>
+      <div style="display: flex; gap: 8px;">
+        <button
+          id="settingsBtn"
+          class="icon-button top-bar__settings"
+          type="button"
+          aria-label="Open settings"
+          title="Settings"
+        >
+          ⚙️
+        </button>
+        <button
+          id="chatToggle"
+          class="icon-button top-bar__settings"
+          type="button"
+          aria-label="Toggle chat"
+          aria-pressed="true"
+          title="Hide chat"
+        >
+          💬
+        </button>
+      </div>
     </header>
 
     <!-- Chat Panel -->
@@ -35,6 +46,13 @@
         aria-label="Chat messages"
       >
         <!-- Messages rendered by JavaScript -->
+      </div>
+
+      <div style="padding: 8px; border-top: 1px solid #e0e0e0; background: #fafafa;">
+        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; user-select: none; color: #666;">
+          <input type="checkbox" id="includePageContext" style="cursor: pointer;">
+          <span>Include page context</span>
+        </label>
       </div>
 
       <form id="chatForm" class="chat-input" autocomplete="off">

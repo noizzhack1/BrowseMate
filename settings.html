@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BrowseMate Settings</title>
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    .settings-container {
+      padding: 20px;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .settings-header {
+      margin-bottom: 30px;
+    }
+
+    .settings-header h1 {
+      font-size: 24px;
+      margin: 0 0 10px 0;
+      color: #333;
+    }
+
+    .settings-header p {
+      color: #666;
+      margin: 0;
+    }
+
+    .settings-form {
+      background: #f9f9f9;
+      padding: 20px;
+      border-radius: 8px;
+      border: 1px solid #e0e0e0;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 600;
+      color: #333;
+    }
+
+    .form-group input,
+    .form-group select {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+
+    .form-group input[type="password"] {
+      font-family: monospace;
+    }
+
+    .form-group small {
+      display: block;
+      margin-top: 5px;
+      color: #666;
+      font-size: 12px;
+    }
+
+    .settings-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: background-color 0.2s;
+    }
+
+    .btn-primary {
+      background-color: #007bff;
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background-color: #0056b3;
+    }
+
+    .btn-secondary {
+      background-color: #6c757d;
+      color: white;
+    }
+
+    .btn-secondary:hover {
+      background-color: #545b62;
+    }
+
+    .status-message {
+      margin-top: 15px;
+      padding: 10px;
+      border-radius: 4px;
+      display: none;
+    }
+
+    .status-message.success {
+      background-color: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+      display: block;
+    }
+
+    .status-message.error {
+      background-color: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+      display: block;
+    }
+
+    .back-link {
+      display: inline-block;
+      margin-bottom: 20px;
+      color: #007bff;
+      text-decoration: none;
+    }
+
+    .back-link:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="settings-container">
+    <a href="sidebar.html" class="back-link">← Back to Chat</a>
+
+    <div class="settings-header">
+      <h1>Settings</h1>
+      <p>Configure your Hugging Face integration</p>
+    </div>
+
+    <form id="settingsForm" class="settings-form">
+      <div class="form-group">
+        <label for="hfToken">Hugging Face API Token *</label>
+        <input
+          type="password"
+          id="hfToken"
+          name="hfToken"
+          placeholder="hf_..."
+          required
+        />
+        <small>Get your token from <a href="https://huggingface.co/settings/tokens" target="_blank">Hugging Face Settings</a></small>
+      </div>
+
+      <div class="form-group">
+        <label for="hfModel">Model</label>
+        <select id="hfModel" name="hfModel">
+          <option value="Qwen/Qwen2.5-Coder-32B-Instruct">Qwen2.5-Coder-32B-Instruct</option>
+          <option value="Qwen/Qwen2.5-Coder-14B-Instruct">Qwen2.5-Coder-14B-Instruct</option>
+          <option value="Qwen/Qwen2.5-Coder-7B-Instruct">Qwen2.5-Coder-7B-Instruct</option>
+          <option value="Qwen/Qwen2.5-Coder-3B-Instruct">Qwen2.5-Coder-3B-Instruct</option>
+        </select>
+        <small>Select the Qwen Coder model you want to use</small>
+      </div>
+
+      <div class="form-group">
+        <label for="maxTokens">Max Tokens</label>
+        <input
+          type="number"
+          id="maxTokens"
+          name="maxTokens"
+          value="1024"
+          min="100"
+          max="4096"
+        />
+        <small>Maximum number of tokens to generate (100-4096)</small>
+      </div>
+
+      <div class="form-group">
+        <label for="temperature">Temperature</label>
+        <input
+          type="number"
+          id="temperature"
+          name="temperature"
+          value="0.7"
+          min="0"
+          max="2"
+          step="0.1"
+        />
+        <small>Controls randomness: 0 = focused, 2 = creative (0-2)</small>
+      </div>
+
+      <div class="settings-actions">
+        <button type="submit" class="btn btn-primary">Save Settings</button>
+        <button type="button" id="testBtn" class="btn btn-secondary">Test Connection</button>
+      </div>
+
+      <div id="statusMessage" class="status-message"></div>
+    </form>
+  </div>
+
+  <script src="settings.js"></script>
+</body>
+</html>

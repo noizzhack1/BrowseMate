@@ -12,8 +12,61 @@ const chatFormEl = document.getElementById("chatForm");
 const chatInputEl = document.getElementById("chatInput");
 /** @type {HTMLButtonElement | null} */
 const chatToggleBtn = document.getElementById("chatToggle");
+/** @type {HTMLButtonElement | null} */
+const settingsBtn = document.getElementById("settingsBtn");
+/** @type {HTMLInputElement | null} */
+const includePageContextCheckbox = document.getElementById("includePageContext");
 /** @type {HTMLDivElement | null} */
 const sidebarRootEl = document.querySelector(".sidebar-root");
+
+// =========================
+// Page Context helpers
+// =========================
+
+/**
+ * Get the current page context (URL, title, and visible text)
+ * @returns {Promise<{url: string, title: string, text: string}>}
+ */
+async function getPageContext() {
+  try {
+    // Get active tab
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+    if (!tab || !tab.id) {
+      return { url: '', title: '', text: '' };
+    }
+
+    // Execute script to get page content
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => {
+        // Get visible text content, excluding scripts and styles
+        const clone = document.body.cloneNode(true);
+        const scripts = clone.querySelectorAll('script, style, noscript');
+        scripts.forEach(el => el.remove());
+
+        // Get text and clean it up
+        const text = clone.innerText
+          .replace(/\s+/g, ' ')  // Normalize whitespace
+          .trim()
+          .slice(0, 3000);  // Limit to first 3000 characters
+
+        return {
+          url: window.location.href,
+          title: document.title,
+          text: text
+        };
+      }
+    });
+
+    return results && results[0] && results[0].result
+      ? results[0].result
+      : { url: '', title: '', text: '' };
+  } catch (error) {
+    console.error('Error getting page context:', error);
+    return { url: '', title: '', text: '' };
+  }
+}
 
 // =========================
 // Message helpers
@@ -41,18 +94,86 @@ function appendMessage(role, text) {
 }
 
 /**
- * Very simple placeholder "AI" reply.
- * Replace this with a real API call if needed.
+ * Call Hugging Face API with the user's message
  * @param {string} userText
- * @returns {string}
+ * @param {boolean} includeContext
+ * @returns {Promise<string>}
  */
-function buildAssistantReply(userText) {
-  const trimmed = userText.trim();
-  if (!trimmed) {
-    return "I'm here in your sidebar. Ask me anything or describe what you're working on.";
-  }
+async function callHuggingFaceAPI(userText, includeContext = false) {
+  try {
+    // Load settings from storage
+    const result = await chrome.storage.sync.get('browsemate_settings');
+    const settings = result.browsemate_settings;
 
-  return `You said: "${trimmed}"\n\nThis is a demo reply. Wire this chat up to your backend or an API to make it truly smart.`;
+    if (!settings || !settings.hfToken) {
+      return "Please configure your Hugging Face API token in Settings (click ⚙️ button).";
+    }
+
+    // Prepare the message content
+    let messageContent = userText;
+
+    // Add page context if requested
+    if (includeContext) {
+      const context = await getPageContext();
+      if (context.url || context.text) {
+        messageContent = `Page Context:
+URL: ${context.url}
+Title: ${context.title}
+
+Page Content (first 3000 chars):
+${context.text}
+
+---
+
+User Question: ${userText}`;
+      }
+    }
+
+    // Use OpenAI-compatible chat completion format
+    const response = await fetch(
+      'https://router.huggingface.co/v1/chat/completions',
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${settings.hfToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: settings.hfModel,
+          messages: [
+            {
+              role: 'user',
+              content: messageContent
+            }
+          ],
+          max_tokens: settings.maxTokens || 1024,
+          temperature: settings.temperature || 0.7
+        })
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`API Error (${response.status}): ${errorText}`);
+    }
+
+    const data = await response.json();
+
+    if (data.error) {
+      throw new Error(data.error);
+    }
+
+    // Handle OpenAI-compatible response format
+    if (data.choices && data.choices.length > 0) {
+      return data.choices[0].message.content || "No response generated.";
+    } else {
+      return JSON.stringify(data);
+    }
+
+  } catch (error) {
+    console.error('Hugging Face API Error:', error);
+    return `Error: ${error.message}\n\nPlease check your settings and try again.`;
+  }
 }
 
 // =========================
@@ -63,7 +184,7 @@ function buildAssistantReply(userText) {
  * Handle user submitting a chat message.
  * @param {SubmitEvent} event
  */
-function handleChatSubmit(event) {
+async function handleChatSubmit(event) {
   event.preventDefault();
   if (!chatInputEl) return;
 
@@ -79,17 +200,22 @@ function handleChatSubmit(event) {
   chatInputEl.value = "";
   autoResizeTextArea(chatInputEl);
 
-  // Simulate assistant response (synchronous for now)
-  const reply = buildAssistantReply(value);
-  appendMessage("assistant", reply);
+  // Show loading indicator
+  appendMessage("assistant", "Thinking...");
 
-  // Notify background script that a chat message was sent (for global actions).
-  if (chrome?.runtime?.sendMessage) {
-    chrome.runtime.sendMessage({
-      type: "chat-message-sent",
-      text: value
-    });
+  // Check if page context should be included
+  const includeContext = includePageContextCheckbox?.checked || false;
+
+  // Call Hugging Face API
+  const reply = await callHuggingFaceAPI(value, includeContext);
+
+  // Remove the "Thinking..." message
+  if (chatMessagesEl && chatMessagesEl.lastChild) {
+    chatMessagesEl.removeChild(chatMessagesEl.lastChild);
   }
+
+  // Show actual response
+  appendMessage("assistant", reply);
 }
 
 /**
@@ -110,6 +236,18 @@ function toggleChatPanel() {
 
   chatToggleBtn.setAttribute("aria-pressed", String(!isCollapsed));
   chatToggleBtn.title = isCollapsed ? "Show chat" : "Hide chat";
+}
+
+/**
+ * Open settings page in a new tab
+ */
+function openSettings() {
+  const settingsUrl = chrome.runtime.getURL('settings.html');
+  chrome.tabs.create({ url: settingsUrl }).catch((error) => {
+    console.error('Error opening settings:', error);
+    // Fallback: try to open in current window
+    window.open(settingsUrl, '_blank');
+  });
 }
 
 // =========================
@@ -146,6 +284,10 @@ function initChat() {
 
   if (chatToggleBtn) {
     chatToggleBtn.addEventListener("click", toggleChatPanel);
+  }
+
+  if (settingsBtn) {
+    settingsBtn.addEventListener("click", openSettings);
   }
 }
 
