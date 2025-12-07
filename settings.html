@@ -139,31 +139,28 @@
 
     <div class="settings-header">
       <h1>Settings</h1>
-      <p>Configure your Hugging Face integration</p>
+      <p>Configure your LLM integration</p>
     </div>
 
     <form id="settingsForm" class="settings-form">
       <div class="form-group">
-        <label for="hfToken">Hugging Face API Token *</label>
+        <label for="selectedLLM">Select LLM Provider</label>
+        <select id="selectedLLM" name="selectedLLM">
+          <!-- Options loaded dynamically from llm-config.json -->
+        </select>
+        <small>Choose your preferred LLM provider from the configuration</small>
+      </div>
+
+      <div class="form-group">
+        <label for="hfToken">API Token *</label>
         <input
           type="password"
           id="hfToken"
           name="hfToken"
-          placeholder="hf_..."
+          placeholder="Enter your API token"
           required
         />
-        <small>Get your token from <a href="https://huggingface.co/settings/tokens" target="_blank">Hugging Face Settings</a></small>
-      </div>
-
-      <div class="form-group">
-        <label for="hfModel">Model</label>
-        <select id="hfModel" name="hfModel">
-          <option value="Qwen/Qwen2.5-Coder-32B-Instruct">Qwen2.5-Coder-32B-Instruct</option>
-          <option value="Qwen/Qwen2.5-Coder-14B-Instruct">Qwen2.5-Coder-14B-Instruct</option>
-          <option value="Qwen/Qwen2.5-Coder-7B-Instruct">Qwen2.5-Coder-7B-Instruct</option>
-          <option value="Qwen/Qwen2.5-Coder-3B-Instruct">Qwen2.5-Coder-3B-Instruct</option>
-        </select>
-        <small>Select the Qwen Coder model you want to use</small>
+        <small>Enter your API token for the selected LLM provider</small>
       </div>
 
       <div class="form-group">
@@ -202,6 +199,7 @@
     </form>
   </div>
 
+  <script src="llm-client.js"></script>
   <script src="settings.js"></script>
 </body>
 </html>

@@ -1,62 +1,131 @@
 # BrowseMate
 
-A Chrome extension to enhance your browsing experience.
+A Chrome MV3 extension with AI-powered automation capabilities using LLM inference.
+
+---
 
 ## Features
 
-- Feature 1
-- Feature 2
-- Feature 3
+- **Side Panel UI** — Clean interface for interacting with the extension
+- **LLM Integration** — Supports multiple LLM providers via HuggingFace Router
+- **DOM Automation** — Content script navigator for browser automation
 
-## Installation
+---
 
-### From Chrome Web Store
-*(Coming soon)*
+## Setup
 
-### Manual Installation (Developer Mode)
+### 1. Install Dependencies
 
-1. Download or clone this repository
-2. Open Chrome and navigate to `chrome://extensions/`
-3. Enable **Developer mode** (toggle in top-right corner)
-4. Click **Load unpacked**
-5. Select the extension folder
+```bash
+npm install
+```
 
-## Usage
+### 2. Configure LLMs
 
-1. Click the BrowseMate icon in your browser toolbar
-2. Configure your preferences
-3. Enjoy enhanced browsing!
+Create a `config.json` file (not tracked in git):
 
-## Development
+```json
+{
+  "llms": [
+    {
+      "name": "Qwen",
+      "token": "hf_YOUR_TOKEN_HERE",
+      "baseURL": "https://router.huggingface.co/v1",
+      "MODEL": "Qwen/Qwen2.5-32B-Instruct:featherless-ai",
+      "prompt": "Your system prompt here"
+    },
+    {
+      "name": "Mistral",
+      "token": "hf_YOUR_TOKEN_HERE",
+      "baseURL": "https://router.huggingface.co/v1",
+      "MODEL": "mistralai/Codestral-22B-v0.1:fireworks-ai",
+      "prompt": "Your system prompt here"
+    }
+  ]
+}
+```
 
-### Project Structure
+**Note:** Get your HuggingFace token at https://huggingface.co/settings/tokens
+
+### 3. Load Extension in Chrome
+
+1. Go to `chrome://extensions`
+2. Enable **Developer mode**
+3. Click **Load unpacked** → select this folder
+
+---
+
+## LLM Inference
+
+Run inference using the configured LLMs:
+
+```bash
+# Use default LLM (first in config)
+node inference_llm.js
+
+# Specify LLM by name
+node inference_llm.js Qwen
+node inference_llm.js Mistral
+```
+
+### Supported Providers
+
+The model name format is `model-id:provider-name`. Available providers include:
+- `featherless-ai`
+- `fireworks-ai`
+- `nebius`
+- `novita`
+- `nscale`
+
+Check available models at: https://huggingface.co/inference/models
+
+---
+
+## Project Structure
 
 ```
 BrowseMate/
-├── manifest.json      # Extension configuration
-├── popup/             # Popup UI files
-│   ├── popup.html
-│   ├── popup.css
-│   └── popup.js
-├── background.js      # Background service worker
-├── content.js         # Content script
-└── icons/             # Extension icons
+├── manifest.json       # Chrome extension manifest
+├── background.js       # Service worker
+├── content.js          # Content script
+├── sidebar.html        # Side panel UI
+├── styles.css          # Styles
+├── settings.html       # Settings page
+├── settings.js         # Settings logic
+├── inference_llm.js    # LLM inference script
+├── config.json         # LLM configuration (gitignored)
+├── package.json        # Node dependencies
+└── .gitignore
 ```
 
-### Getting Started
+---
 
-1. Clone the repository
-   ```bash
-   git clone https://github.com/yourusername/BrowseMate.git
-   ```
-2. Load the extension in Chrome (see Manual Installation above)
-3. Make changes and reload the extension to test
+## Configuration
 
-## Contributing
+### config.json fields
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+| Field | Description |
+|-------|-------------|
+| `name` | Display name for the LLM |
+| `token` | HuggingFace API token |
+| `baseURL` | API endpoint URL |
+| `MODEL` | Model ID with provider suffix |
+| `prompt` | Default prompt for this LLM |
+
+---
+
+## Development
+
+```bash
+# Test LLM connection
+node inference_llm.js
+
+# Check available LLMs
+# Edit config.json to add/modify LLMs
+```
+
+---
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
-
+MIT

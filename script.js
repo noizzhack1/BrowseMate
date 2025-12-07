@@ -175,19 +175,16 @@ function appendMessage(role, text) {
 }
 
 /**
- * Call Hugging Face API with the user's message
+ * Call LLM API with the user's message using the unified LLM client
  * @param {string} userText
  * @param {boolean} includeContext
  * @returns {Promise<string>}
  */
-async function callHuggingFaceAPI(userText, includeContext = false) {
+async function callLLMAPI(userText, includeContext = false) {
   try {
-    // Load settings from storage
-    const result = await chrome.storage.sync.get('browsemate_settings');
-    const settings = result.browsemate_settings;
-
-    if (!settings || !settings.hfToken) {
-      return "Please configure your Hugging Face API token in Settings (click ⚙️ button).";
+    // Initialize LLM client if not already done
+    if (!llmClient.isInitialized) {
+      await llmClient.initialize();
     }
 
     // Prepare the message content
@@ -210,49 +207,25 @@ User Question: ${userText}`;
       }
     }
 
-    // Use OpenAI-compatible chat completion format
-    const response = await fetch(
-      'https://router.huggingface.co/v1/chat/completions',
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${settings.hfToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: settings.hfModel,
-          messages: [
-            {
-              role: 'user',
-              content: messageContent
-            }
-          ],
-          max_tokens: settings.maxTokens || 1024,
-          temperature: settings.temperature || 0.7
-        })
-      }
-    );
+    // Load settings from storage for temperature and maxTokens
+    const result = await chrome.storage.sync.get('browsemate_settings');
+    const settings = result.browsemate_settings || {};
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`API Error (${response.status}): ${errorText}`);
-    }
+    // Generate completion using the LLM client
+    const response = await llmClient.generateCompletion(messageContent, {
+      temperature: settings.temperature || 0.7,
+      maxTokens: settings.maxTokens || 1024
+    });
 
-    const data = await response.json();
-
-    if (data.error) {
-      throw new Error(data.error);
-    }
-
-    // Handle OpenAI-compatible response format
-    if (data.choices && data.choices.length > 0) {
-      return data.choices[0].message.content || "No response generated.";
-    } else {
-      return JSON.stringify(data);
-    }
+    return response;
 
   } catch (error) {
-    console.error('Hugging Face API Error:', error);
+    console.error('LLM API Error:', error);
+
+    if (error.message.includes('token')) {
+      return "Please configure your API token in Settings (click ⚙️ button).";
+    }
+
     return `Error: ${error.message}\n\nPlease check your settings and try again.`;
   }
 }
@@ -290,7 +263,7 @@ async function handleChatSubmit(event) {
 
   let reply;
   try {
-    reply = await callHuggingFaceAPI(value, includeContext);
+    reply = await callLLMAPI(value, includeContext);
   } finally {
     // Always unfreeze, even if the API errors
     await setPageFrozen(false);
