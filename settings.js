@@ -1,5 +1,8 @@
 // Settings page script - manages LLM configuration
 
+// Get LLM client instance from global scope (set by LLMClient.js module)
+const llmClient = window.llmClient;
+
 const settingsForm = document.getElementById('settingsForm');
 const statusMessage = document.getElementById('statusMessage');
 const testBtn = document.getElementById('testBtn');
