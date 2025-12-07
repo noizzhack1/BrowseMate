@@ -1,0 +1,4 @@
+"""
+BrowseMate FastAPI Application Package.
+"""
+
