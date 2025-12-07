@@ -20,7 +20,7 @@ const includePageContextCheckbox = document.getElementById("includePageContext")
 const sidebarRootEl = document.querySelector(".sidebar-root");
 
 // =========================
-// Page Context helpers
+// Page Context & Freeze helpers
 // =========================
 
 /**
@@ -29,42 +29,107 @@ const sidebarRootEl = document.querySelector(".sidebar-root");
  */
 async function getPageContext() {
   try {
-    // Get active tab
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab || !tab.id) return { url: "", title: "", text: "" };
 
-    if (!tab || !tab.id) {
-      return { url: '', title: '', text: '' };
-    }
-
-    // Execute script to get page content
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: () => {
-        // Get visible text content, excluding scripts and styles
         const clone = document.body.cloneNode(true);
-        const scripts = clone.querySelectorAll('script, style, noscript');
-        scripts.forEach(el => el.remove());
+        const scripts = clone.querySelectorAll("script, style, noscript");
+        scripts.forEach((el) => el.remove());
 
-        // Get text and clean it up
-        const text = clone.innerText
-          .replace(/\s+/g, ' ')  // Normalize whitespace
-          .trim()
-          .slice(0, 3000);  // Limit to first 3000 characters
+        const text = clone.innerText.replace(/\s+/g, " ").trim().slice(0, 3000);
 
         return {
           url: window.location.href,
           title: document.title,
-          text: text
+          text
         };
       }
     });
 
     return results && results[0] && results[0].result
       ? results[0].result
-      : { url: '', title: '', text: '' };
+      : { url: "", title: "", text: "" };
   } catch (error) {
-    console.error('Error getting page context:', error);
-    return { url: '', title: '', text: '' };
+    console.error("Error getting page context:", error);
+    return { url: "", title: "", text: "" };
+  }
+}
+
+/**
+ * Freeze or unfreeze the current page with a blue border overlay,
+ * using the same pattern as getPageContext (runs in the page context).
+ * @param {boolean} freeze
+ */
+async function setPageFrozen(freeze) {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab || !tab.id) return;
+
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: (shouldFreeze) => {
+        const OVERLAY_ID = "__browsemate_page_freeze_overlay";
+        const STYLE_ID = "__browsemate_freeze_style";
+        const body = document.body;
+        if (!body) return;
+
+        if (shouldFreeze) {
+          if (document.getElementById(OVERLAY_ID)) return;
+
+          // Inject Comet-style animated border CSS once
+          if (!document.getElementById(STYLE_ID)) {
+            const styleEl = document.createElement("style");
+            styleEl.id = STYLE_ID;
+            styleEl.textContent =
+              ".commet-freeze-border{" +
+              "position:relative;border-radius:12px;overflow:hidden;" +
+              "}" +
+              ".commet-freeze-border::after{" +
+              'content:"";position:absolute;inset:0;border-radius:inherit;padding:2px;' +
+              "background:linear-gradient(90deg,#6a5dfc,#b05bff,#ff5cf1,#ff6b8d,#ffb85c,#6a5dfc) 0 0/300% 100%;" +
+              "animation:commetBorderAnim 3s linear infinite;" +
+              "-webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);" +
+              "-webkit-mask-composite:xor;mask-composite:exclude;" +
+              "}" +
+              "@keyframes commetBorderAnim{" +
+              "0%{background-position:0% 0;}" +
+              "100%{background-position:-300% 0;}" +
+              "}";
+            (document.head || document.documentElement).appendChild(styleEl);
+          }
+
+          const overlay = document.createElement("div");
+          overlay.id = OVERLAY_ID;
+          overlay.className = "commet-freeze-border";
+          Object.assign(overlay.style, {
+            position: "fixed",
+            inset: "0",
+            zIndex: "2147483646",
+            pointerEvents: "auto",
+            cursor: "wait",
+            background: "rgba(15, 23, 42, 0.03)"
+          });
+
+          body.style.pointerEvents = "none";
+          body.style.userSelect = "none";
+          document.documentElement.style.overflow = "hidden";
+
+          document.body.appendChild(overlay);
+        } else {
+          const overlay = document.getElementById(OVERLAY_ID);
+          if (overlay) overlay.remove();
+          body.style.pointerEvents = "";
+          body.style.userSelect = "";
+          document.documentElement.style.overflow = "";
+        }
+      },
+      args: [freeze]
+    });
+  } catch (error) {
+    console.error("Error freezing page:", error);
   }
 }
 
@@ -200,14 +265,20 @@ async function handleChatSubmit(event) {
   chatInputEl.value = "";
   autoResizeTextArea(chatInputEl);
 
-  // Show loading indicator
-  appendMessage("assistant", "Thinking...");
-
   // Check if page context should be included
   const includeContext = includePageContextCheckbox?.checked || false;
 
-  // Call Hugging Face API
-  const reply = await callHuggingFaceAPI(value, includeContext);
+  // Freeze page and show loading indicator
+  await setPageFrozen(true);
+  appendMessage("assistant", "Thinking...");
+
+  let reply;
+  try {
+    reply = await callHuggingFaceAPI(value, includeContext);
+  } finally {
+    // Always unfreeze, even if the API errors
+    await setPageFrozen(false);
+  }
 
   // Remove the "Thinking..." message
   if (chatMessagesEl && chatMessagesEl.lastChild) {

@@ -12,9 +12,5 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     if (sender.tab && sender.tab.windowId !== undefined) {
       chrome.sidePanel.open({ windowId: sender.tab.windowId }).catch(() => {});
     }
-    return;
   }
-
-  // Handle other messages here if needed in the future
 });
-
