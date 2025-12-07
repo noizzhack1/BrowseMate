@@ -1,0 +1,19 @@
+{
+    "llms": [
+      {
+        "name": "Qwen",
+        "token": "add-token-here",
+        "baseURL": "https://router.huggingface.co/v1",
+        "MODEL": "Qwen/Qwen2.5-32B-Instruct:featherless-ai",
+        "prompt": "generate a basic js function for clicking a button with id 'submit' and text 'Submit. Result the code function only, no added text or explenations.'"
+      },
+      {
+        "name": "Mistral",
+        "token": "add-token-here",
+        "baseURL": "https://router.huggingface.co/v1",
+        "MODEL": "mistralai/Codestral-22B-v0.1:fireworks-ai",
+        "prompt": "generate a basic js function for clicking a button with id 'submit' and text 'Submit'"
+      }
+    ]
+  }
+  
