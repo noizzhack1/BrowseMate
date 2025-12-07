@@ -1,446 +1,203 @@
-# AI Browser Extension Backend - Project Specification
+# AI Browser Extension - Project Specification
 
 ## 📋 Project Overview
 
 ### Purpose
-Build the **backend logic** for a browser extension that provides an AI-powered chat sidebar. The sidebar can:
-- See and understand the current page context (HTML + CSS)
-- Answer user questions about the page content
-- Perform automated actions on behalf of the user (click buttons, fill forms, scroll, etc.)
+Build an AI-powered browser extension with a chat sidebar that can:
+- See and understand the current page content
+- Answer user questions about the page
+- Perform automated actions (click buttons, fill forms, scroll, etc.)
 
 ### Technology Stack
 - **Language:** JavaScript ES6
-- **Runtime:** Browser Extension Environment
-- **LLM Integration:** External AI model API calls (planner model + actions model)
+- **Runtime:** Chrome Extension (Manifest V3)
+- **LLM Integration:** HuggingFace API (planner + actions)
 
 ---
 
-## 🏗️ System Architecture
+## 🏗️ Architecture
 
-```mermaid
-flowchart TB
-    subgraph Frontend
-        UI[Sidebar UI]
-    end
-
-    subgraph TaskA[Task A - Orchestrator]
-        A1[Receive Context + Prompt]
-        A2[Planner LLM]
-        A3{Intent?}
-        A4[Return Answer]
-        A5[Delegate to Task B]
-    end
-
-    subgraph TaskB[Task B - Action Executor]
-        B1[Receive Action]
-        B2[Actions LLM]
-        B3[Generate Code]
-        B4[EVAL Execute]
-        B5{HTML Changed?}
-        B6[Retry]
-        B7[Return Result]
-    end
-
-    UI --> A1
-    A1 --> A2
-    A2 --> A3
-    A3 -->|Question| A4
-    A3 -->|Action| A5
-    A5 --> B1
-    B1 --> B2
-    B2 --> B3
-    B3 --> B4
-    B4 --> B5
-    B5 -->|No| B6
-    B6 -->|Max 3x| B2
-    B5 -->|Yes| B7
-    B7 --> A5
-    A4 --> UI
-    A5 --> UI
 ```
-
----
-
-## 🔄 Sequence Diagram - Full Flow
-
-```mermaid
-sequenceDiagram
-    participant FE as Frontend
-    participant TA as Task A
-    participant PL as Planner LLM
-    participant TB as Task B
-    participant AL as Actions LLM
-    participant DOM as Page DOM
-
-    FE->>TA: { context, prompt }
-    TA->>PL: Analyze intent
-    PL-->>TA: { intent, answer?, action? }
-    
-    alt Intent = Question
-        TA-->>FE: { type: "answer", message }
-    else Intent = Action
-        TA->>TB: { context, action }
-        TB->>AL: Generate code for action
-        AL-->>TB: { code, explanation }
-        
-        loop Max 3 attempts
-            TB->>DOM: Execute code (EVAL)
-            DOM-->>TB: New HTML
-            TB->>TB: Compare HTML
-            alt HTML Changed
-                TB-->>TA: { success: true }
-            else No Change
-                TB->>AL: Retry with new approach
-            end
-        end
-        
-        TB-->>TA: { success, message }
-        TA-->>FE: { type: "action_result", message, success }
-    end
-```
-
----
-
-## 📦 TASK A - ORCHESTRATOR MODULE
-
-### Responsibilities
-1. Receive context (HTML + CSS) and user prompt from frontend
-2. Send to Planner LLM
-3. If question → return answer to frontend
-4. If action needed → delegate to Task B
-
-```mermaid
-flowchart LR
-    A[Input] --> B[Planner LLM]
-    B --> C{Intent?}
-    C -->|Question| D[Return Answer]
-    C -->|Action| E[Call Task B]
-    E --> F[Return Result]
-```
-
-### Interfaces
-
-```javascript
-// INPUT: What Task A receives from frontend
-{
-  context: string,    // HTML + CSS combined
-  prompt: string      // User's question or request
-}
-
-// OUTPUT: What Task A returns to frontend
-{
-  type: string,       // "answer" | "action_result"
-  message: string,    // Response text for the user
-  success: boolean    // Did it work?
-}
-```
-
-### Planner LLM Response Format
-
-```javascript
-// What the Planner LLM should return
-{
-  intent: string,     // "question" | "action"
-  answer: string,     // If question: the answer text
-  action: {           // If action: what to do
-    type: string,     // "click" | "fill" | "scroll" | "select" | etc.
-    target: string,   // Description of element (e.g., "the blue submit button")
-    value: string     // Optional: value for fill/select actions
-  }
-}
-```
-
-### Task A Functions
-
-```javascript
-/**
- * Main entry point
- * @param {string} context - HTML + CSS content
- * @param {string} prompt - User's request
- * @returns {Promise<{type, message, success}>}
- */
-async function processRequest(context, prompt) {}
-
-/**
- * Call Planner LLM
- * @param {string} context - Page context
- * @param {string} prompt - User prompt
- * @returns {Promise<{intent, answer?, action?}>}
- */
-async function callPlannerLLM(context, prompt) {}
-
-/**
- * Delegate action to Task B
- * @param {string} context - Page context
- * @param {{type, target, value?}} action - Action to perform
- * @returns {Promise<{success, message}>}
- */
-async function delegateToTaskB(context, action) {}
-```
-
----
-
-## ⚡ TASK B - ACTION EXECUTOR MODULE
-
-### Responsibilities
-1. Receive context and action from Task A
-2. Call Actions LLM to generate JavaScript code
-3. Execute code with EVAL
-4. Check if HTML changed
-5. Retry up to 3 times if no change
-6. Return SUCCESS or FAILED to Task A
-
-```mermaid
-flowchart TB
-    A[Receive Action] --> B[Actions LLM]
-    B --> C[Generate Code]
-    C --> D[EVAL]
-    D --> E[Get New HTML]
-    E --> F{Changed?}
-    F -->|Yes| G[SUCCESS]
-    F -->|No| H{Attempts < 3?}
-    H -->|Yes| B
-    H -->|No| I[FAILED]
-```
-
-### Interfaces
-
-```javascript
-// INPUT: What Task B receives from Task A
-{
-  context: string,    // Current HTML + CSS
-  action: {
-    type: string,     // "click" | "fill" | "scroll" | etc.
-    target: string,   // Element description
-    value: string     // Optional value
-  }
-}
-
-// OUTPUT: What Task B returns to Task A
-{
-  success: boolean,   // true = SUCCESS, false = FAILED
-  message: string     // Description of what happened
-}
-```
-
-### Actions LLM Response Format
-
-```javascript
-// What the Actions LLM should return
-{
-  code: string,       // Executable JavaScript code
-  explanation: string // What the code does
-}
-```
-
-### Task B Functions
-
-```javascript
-/**
- * Main entry point
- * @param {string} context - HTML + CSS content
- * @param {{type, target, value?}} action - Action to perform
- * @returns {Promise<{success, message}>}
- */
-async function executeAction(context, action) {}
-
-/**
- * Call Actions LLM to generate code
- * @param {string} context - Page context
- * @param {{type, target, value?}} action - Action descriptor
- * @returns {Promise<{code, explanation}>}
- */
-async function callActionsLLM(context, action) {}
-
-/**
- * Execute generated code
- * @param {string} code - JavaScript to execute
- * @returns {Promise<{success, error?}>}
- */
-async function runCode(code) {}
-
-/**
- * Get current page HTML
- * @returns {string}
- */
-function getHTML() {}
-
-/**
- * Check if HTML changed
- * @param {string} before - HTML before action
- * @param {string} after - HTML after action
- * @returns {boolean}
- */
-function hasChanged(before, after) {}
-
-/**
- * Execute with retry logic (max 3 attempts)
- * @param {string} context - Page context
- * @param {{type, target, value?}} action - Action to perform
- * @returns {Promise<{success, message}>}
- */
-async function executeWithRetry(context, action) {}
-```
-
----
-
-## 🔄 Data Flow Examples
-
-### Question Flow
-
-```mermaid
-sequenceDiagram
-    Frontend->>Task A: { context, prompt: "What is the price?" }
-    Task A->>Planner LLM: Analyze
-    Planner LLM-->>Task A: { intent: "question", answer: "$99" }
-    Task A-->>Frontend: { type: "answer", message: "$99", success: true }
-```
-
-### Action Flow (Success on First Try)
-
-```mermaid
-sequenceDiagram
-    Frontend->>Task A: { context, prompt: "Click buy button" }
-    Task A->>Planner LLM: Analyze
-    Planner LLM-->>Task A: { intent: "action", action: {type: "click", target: "buy button"} }
-    Task A->>Task B: { context, action }
-    Task B->>Actions LLM: Generate code
-    Actions LLM-->>Task B: { code: "document.querySelector('.buy').click()" }
-    Task B->>Task B: EVAL + Check HTML
-    Note over Task B: HTML Changed ✓
-    Task B-->>Task A: { success: true, message: "Clicked buy button" }
-    Task A-->>Frontend: { type: "action_result", success: true }
-```
-
-### Action Flow (Retry then Fail)
-
-```mermaid
-sequenceDiagram
-    Task A->>Task B: { context, action }
-    
-    loop Attempt 1-3
-        Task B->>Actions LLM: Generate code
-        Actions LLM-->>Task B: { code }
-        Task B->>Task B: EVAL + Check HTML
-        Note over Task B: No change detected
-    end
-    
-    Task B-->>Task A: { success: false, message: "Failed after 3 attempts" }
-```
-
----
-
-## 📝 Supported Actions
-
-| Type | Description | Needs Value? |
-|------|-------------|--------------|
-| `click` | Click element | No |
-| `fill` | Fill input field | Yes |
-| `select` | Select dropdown option | Yes |
-| `scroll` | Scroll page (up/down/top/bottom) | Yes (direction) |
-| `check` | Toggle checkbox | No |
-| `hover` | Hover over element | No |
-| `submit` | Submit form | No |
-
----
-
-## 🛡️ Error Handling
-
-```javascript
-// Simple error codes
-const Errors = {
-  LLM_FAILED: 'LLM call failed',
-  CODE_FAILED: 'Code execution failed',
-  MAX_RETRIES: 'Max retries exceeded',
-  INVALID_ACTION: 'Invalid action type'
-};
+┌─────────────────────────────────────────────────────────────────┐
+│                    BROWSEMATE EXTENSION                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   sidebar.html + script.js          content.js                  │
+│   ┌─────────────────────┐          ┌─────────────────────┐      │
+│   │  Chat UI            │          │  DOM Access         │      │
+│   │  LLM API calls      │◄────────►│  Action Execution   │      │
+│   │  Orchestrator       │          │  Page Context       │      │
+│   └─────────────────────┘          └─────────────────────┘      │
+│                                              │                   │
+│                                              ▼                   │
+│                                    ┌─────────────────────┐      │
+│                                    │     PAGE DOM        │      │
+│                                    └─────────────────────┘      │
+│                                                                  │
+│   background.js                                                  │
+│   ┌─────────────────────┐                                       │
+│   │  Extension Lifecycle │                                       │
+│   │  Open Side Panel     │                                       │
+│   └─────────────────────┘                                       │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              │ fetch()
+                              ▼
+                    ┌─────────────────┐
+                    │  HuggingFace    │
+                    │  LLM API        │
+                    └─────────────────┘
 ```
 
 ---
 
 ## 📁 File Structure
 
-```mermaid
-flowchart TB
-    subgraph src["/src"]
-        subgraph taskA["/taskA"]
-            A1[index.js]
-        end
-        subgraph taskB["/taskB"]
-            B1[index.js]
-            B2[diff.js]
-            B3[retry.js]
-        end
-        subgraph llm["/llm"]
-            L1[index.js]
-        end
-        subgraph utils["/utils"]
-            U1[logger.js]
-        end
-    end
+```
+BrowseMate/
+├── manifest.json        # Extension configuration
+├── background.js        # Service worker
+├── sidebar.html         # Sidebar UI markup
+├── script.js            # Sidebar logic (Task A - Orchestrator)
+├── content.js           # Page script (Task B - Action Executor)
+├── styles.css           # Sidebar styles
+├── settings.html        # Settings page
+└── settings.js          # Settings logic
 ```
 
+---
+
+## 📦 TASK A - ORCHESTRATOR (script.js)
+
+### Responsibilities
+1. Receive user prompt from chat UI
+2. Get page context
+3. Call Planner LLM to determine intent
+4. If question → return answer directly
+5. If action → delegate to content.js (Task B)
+
+### Functions
+
+```javascript
+async function processRequest(prompt, usePageContext) {}
+async function getPageContext(options) {}
+async function callPlannerLLM(context, prompt) {}
+async function delegateToTaskB(action) {}
+async function callHuggingFaceAPI(userText, includeContext) {}
 ```
-/src
-  /taskA
-    index.js          # processRequest, callPlannerLLM, delegateToTaskB
-  /taskB
-    index.js          # executeAction, callActionsLLM, runCode
-    diff.js           # hasChanged
-    retry.js          # executeWithRetry
-  /llm
-    index.js          # Generic LLM call wrapper
-  /utils
-    logger.js         # Simple logging
+
+### Planner LLM Response Format
+
+```javascript
+{
+  intent: "question" | "action",
+  answer: "string (if question)",
+  action: {
+    type: "click|fill|select|scroll|check|hover|submit",
+    target: "CSS selector or element description",
+    value: "optional value for fill/select"
+  }
+}
 ```
+
+---
+
+## ⚡ TASK B - ACTION EXECUTOR (content.js)
+
+### Responsibilities
+1. Listen for action requests from sidebar
+2. Find target element in DOM
+3. Execute action (click, fill, scroll, etc.)
+4. Detect if page changed
+5. Retry up to 3 times if no change
+6. Return success/failure
+
+### Functions
+
+```javascript
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {})
+async function executeAction(action) {}
+function findElement(target) {}
+function performAction(element, actionType, value) {}
+function detectChange(beforeHTML, afterHTML) {}
+async function executeWithRetry(action) {}
+```
+
+### Supported Actions
+
+| Type | Description | Needs Value? |
+|------|-------------|--------------|
+| `click` | Click element | No |
+| `fill` | Fill input field | Yes |
+| `select` | Select dropdown option | Yes |
+| `scroll` | Scroll page | Yes (direction) |
+| `check` | Toggle checkbox | No |
+| `hover` | Hover over element | No |
+| `submit` | Submit form | No |
+
+---
+
+## 🔄 Data Flow
+
+### Question Flow
+```
+User: "What is the price?"
+  → getPageContext()
+  → callPlannerLLM() → { intent: "question", answer: "$99" }
+  → Return to UI: "$99"
+```
+
+### Action Flow
+```
+User: "Click buy button"
+  → getPageContext()
+  → callPlannerLLM() → { intent: "action", action: { type: "click", target: ".buy-btn" } }
+  → delegateToTaskB() → content.js
+  → executeAction() → clicks button
+  → Return to UI: "Clicked buy button"
+```
+
+---
+
+## 🛡️ Error Handling
+
+| Scenario | Response |
+|----------|----------|
+| Empty prompt | Return error message |
+| LLM call fails | Fallback to direct LLM call |
+| Element not found | Return error, retry |
+| Action failed | Retry up to 3 times |
 
 ---
 
 ## ✅ Acceptance Criteria
 
-### Task A
-- [ ] Receives context + prompt
-- [ ] Calls Planner LLM
-- [ ] Returns answer for questions
-- [ ] Delegates actions to Task B
-- [ ] Returns final result to frontend
+### Task A (script.js)
+- [ ] `getPageContext()` supports text and HTML modes
+- [ ] `callPlannerLLM()` determines intent
+- [ ] `processRequest()` orchestrates the flow
+- [ ] `delegateToTaskB()` sends actions to content.js
 
-### Task B
-- [ ] Receives context + action
-- [ ] Calls Actions LLM for code
-- [ ] Executes code with EVAL
-- [ ] Detects HTML changes
+### Task B (content.js)
+- [ ] Listens for action messages
+- [ ] Finds elements by selector/text
+- [ ] Executes all action types
+- [ ] Detects DOM changes
 - [ ] Retries up to 3 times
-- [ ] Returns SUCCESS or FAILED
 
 ---
 
 ## 🚀 Implementation Order
 
-```mermaid
-gantt
-    title Implementation Timeline
-    dateFormat  X
-    axisFormat %s
-    
-    section Phase 1
-    LLM Wrapper           :a1, 0, 1
-    
-    section Phase 2
-    Task A - Planner      :a2, 1, 2
-    
-    section Phase 3
-    Task B - Executor     :a3, 2, 4
-    Task B - Diff         :a4, 2, 3
-    Task B - Retry        :a5, 3, 4
-    
-    section Phase 4
-    Integration           :a6, 4, 5
-    Testing               :a7, 5, 6
 ```
-
-1. **LLM wrapper** - Generic function to call LLM APIs
-2. **Task A** - Planner logic and routing
-3. **Task B** - Code generation, execution, diff, retry
-4. **Integration** - Connect Task A ↔ Task B
-5. **Testing** - End-to-end flows
+1. Extend getPageContext() with HTML mode
+2. Add callPlannerLLM()
+3. Add processRequest() orchestrator
+4. Add delegateToTaskB()
+5. Add message listener to content.js
+6. Add executeAction()
+7. Add findElement()
+8. Add retry logic
+9. Testing
+```
