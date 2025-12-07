@@ -1,5 +1,5 @@
 // Settings page script - manages LLM configuration
-
+const llmClient = window.llmClient;
 const settingsForm = document.getElementById('settingsForm');
 const statusMessage = document.getElementById('statusMessage');
 const testBtn = document.getElementById('testBtn');

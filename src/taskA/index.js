@@ -12,6 +12,8 @@ import { LLMClient } from '../llm/LLMClient.js';
 import { executeAction } from '../executor/index.js';
 // Import logger for debugging
 import { Logger } from '../utils/logger.js';
+// Import action tools for LLM function calling
+import { getActionTools } from '../actions/ActionTools.js';
 
 // LLM client instance - lazy initialized
 let llmClient = null;
@@ -28,19 +30,23 @@ function getLLMClient() {
 }
 
 /**
- * Call Planner LLM to determine intent (question vs action)
+ * Call Planner LLM to determine intent (question vs action) with tool calling
  * @param {string} context - Page context (text or HTML)
  * @param {string} prompt - User's question or request
- * @returns {Promise<{intent: string, answer?: string, action?: {type: string, target: string, value?: string}}>}
+ * @returns {Promise<{intent: string, answer?: string, toolCalls?: Array}>}
  */
 async function callPlannerLLM(context, prompt) {
   Logger.info('[callPlannerLLM] Starting planner LLM call');
   Logger.debug('[callPlannerLLM] Prompt:', prompt);
   Logger.debug('[callPlannerLLM] Context type:', typeof context);
-  
+
   const llm = getLLMClient();
   Logger.debug('[callPlannerLLM] LLM client obtained');
-  
+
+  // Get available action tools for function calling
+  const tools = getActionTools();
+  Logger.info('[callPlannerLLM] Action tools loaded:', tools.length);
+
   // Prepare context string (combine text and HTML if available)
   let contextStr = '';
   if (typeof context === 'string') {
@@ -55,11 +61,11 @@ async function callPlannerLLM(context, prompt) {
       contextStr += `Page HTML (first 5000 chars):\n${context.html.substring(0, 5000)}`;
     }
   }
-  
+
   try {
-    Logger.info('[callPlannerLLM] Calling llm.plannerCall...');
+    Logger.info('[callPlannerLLM] Calling llm.plannerCall with tools...');
     Logger.debug('[callPlannerLLM] Context string length:', contextStr.length);
-    const result = await llm.plannerCall(contextStr, prompt);
+    const result = await llm.plannerCall(contextStr, prompt, tools);
     Logger.info('[callPlannerLLM] Planner LLM result received');
     Logger.debug('[callPlannerLLM] Result:', result);
     return result;
@@ -107,9 +113,10 @@ async function delegateToTaskB(action) {
  * Routes to question answering or action execution based on LLM analysis
  * @param {string|Object} context - Page context (string or {url, title, text, html})
  * @param {string} prompt - User's question or request
+ * @param {Function} onProgress - Optional callback for progress updates (step, total, description, result)
  * @returns {Promise<{type: string, message: string, success: boolean}>}
  */
-async function processRequest(context, prompt) {
+async function processRequest(context, prompt, onProgress = null) {
   Logger.info('[processRequest] Starting request processing');
   Logger.info('[processRequest] Prompt:', prompt);
   Logger.info('[processRequest] Has context:', !!context);
@@ -135,28 +142,85 @@ async function processRequest(context, prompt) {
         success: true
       };
     } else if (plannerResult.intent === 'action') {
-      // Delegate to Task B
-      Logger.info('[processRequest] Intent: action - delegating to Task B');
-      Logger.debug('[processRequest] Action details:', plannerResult.action);
-      
-      if (!plannerResult.action) {
-        Logger.error('[processRequest] Action intent but no action details provided');
+      // LLM requested to call tools (actions)
+      Logger.info('[processRequest] Intent: action - processing tool calls');
+
+      if (!plannerResult.toolCalls || plannerResult.toolCalls.length === 0) {
+        Logger.error('[processRequest] Action intent but no tool calls provided');
         return {
           type: 'action_result',
-          message: 'LLM identified an action but did not provide action details.',
+          message: 'LLM identified an action but did not provide tool calls.',
           success: false
         };
       }
-      
-      // Execute action via Task B
-      Logger.info('[processRequest] Calling delegateToTaskB...');
-      const actionResult = await delegateToTaskB(plannerResult.action);
-      Logger.info('[processRequest] Task B result:', actionResult);
-      
+
+      // Execute each tool call (action)
+      Logger.info(`[processRequest] Processing ${plannerResult.toolCalls.length} tool call(s)...`);
+      const results = [];
+      const totalSteps = plannerResult.toolCalls.length;
+
+      for (let i = 0; i < plannerResult.toolCalls.length; i++) {
+        const toolCall = plannerResult.toolCalls[i];
+        const stepNumber = i + 1;
+
+        Logger.info('[processRequest] Tool call:', toolCall);
+
+        const functionName = toolCall.function.name;
+        const functionArgs = JSON.parse(toolCall.function.arguments);
+        const stepDescription = toolCall.description || `${functionName}`;
+
+        Logger.info(`[processRequest] Step ${stepNumber}/${totalSteps}: ${stepDescription}`);
+
+        // Send progress update if callback provided
+        if (onProgress) {
+          onProgress({
+            step: stepNumber,
+            total: totalSteps,
+            description: stepDescription,
+            status: 'executing'
+          });
+        }
+
+        // Convert tool call to action format for Task B
+        const action = {
+          name: functionName,
+          params: functionArgs
+        };
+
+        // Execute action via Task B
+        Logger.info('[processRequest] Calling delegateToTaskB...');
+        const actionResult = await delegateToTaskB(action);
+        Logger.info('[processRequest] Task B result:', actionResult);
+
+        results.push(actionResult);
+
+        // Send completion update
+        if (onProgress) {
+          onProgress({
+            step: stepNumber,
+            total: totalSteps,
+            description: stepDescription,
+            status: actionResult.success ? 'completed' : 'failed',
+            message: actionResult.message
+          });
+        }
+
+        // If any action fails, stop and return error
+        if (!actionResult.success) {
+          return {
+            type: 'action_result',
+            message: actionResult.message || 'Action failed',
+            success: false
+          };
+        }
+      }
+
+      // All actions succeeded
+      const messages = results.map(r => r.message).join('\n');
       return {
         type: 'action_result',
-        message: actionResult.message || 'Action completed',
-        success: actionResult.success || false
+        message: messages || 'Actions completed successfully',
+        success: true
       };
     } else {
       // Unknown intent

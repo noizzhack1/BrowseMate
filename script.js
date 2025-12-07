@@ -183,9 +183,10 @@ function appendMessage(role, text) {
  * This replaces the direct LLM call with the full Task A + Task B flow
  * @param {string} userText
  * @param {boolean} includeContext
+ * @param {Function} onProgress - Optional callback for progress updates
  * @returns {Promise<string>}
  */
-async function callLLMAPI(userText, includeContext = false) {
+async function callLLMAPI(userText, includeContext = false, onProgress = null) {
   console.log('[callLLMAPI] Starting LLM API call');
   console.log('[callLLMAPI] User text:', userText);
   console.log('[callLLMAPI] Include context:', includeContext);
@@ -209,7 +210,7 @@ async function callLLMAPI(userText, includeContext = false) {
     // Use Task A orchestrator to process the request
     // Task A will determine if it's a question or action and route accordingly
     console.log('[callLLMAPI] Calling processRequest...');
-    const result = await processRequest(context, userText);
+    const result = await processRequest(context, userText, onProgress);
     console.log('[callLLMAPI] ProcessRequest completed');
     console.log('[callLLMAPI] Result type:', result.type);
     console.log('[callLLMAPI] Result:', result);
@@ -287,20 +288,65 @@ async function handleChatSubmit(event) {
   appendMessage("assistant", "Thinking...");
 
   let reply;
+  let progressMessageEl = null;
+
   try {
-    reply = await callLLMAPI(value, includeContext);
+    // Create a callback for progress updates
+    const onProgress = (progress) => {
+      // Remove "Thinking..." message if still there
+      if (chatMessagesEl && chatMessagesEl.lastChild && chatMessagesEl.lastChild.textContent === "Thinking...") {
+        chatMessagesEl.removeChild(chatMessagesEl.lastChild);
+      }
+
+      // Create or update progress message
+      if (!progressMessageEl) {
+        const container = document.createElement("div");
+        container.className = "message message--assistant";
+        const body = document.createElement("div");
+        body.className = "message__body";
+        container.appendChild(body);
+        chatMessagesEl.appendChild(container);
+        progressMessageEl = body;
+      }
+
+      // Format progress update
+      const statusIcon = progress.status === 'completed' ? '✓' :
+                        progress.status === 'failed' ? '✗' : '⋯';
+      const stepText = `Step ${progress.step}/${progress.total}: ${progress.description} ${statusIcon}`;
+
+      // Update or append to progress message
+      const lines = progressMessageEl.textContent.split('\n').filter(l => l.trim());
+
+      if (progress.status === 'executing') {
+        // Add new step
+        lines.push(stepText);
+      } else {
+        // Update last line with completion status
+        lines[lines.length - 1] = stepText;
+      }
+
+      progressMessageEl.textContent = lines.join('\n');
+      chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+    };
+
+    reply = await callLLMAPI(value, includeContext, onProgress);
   } finally {
     // Always unfreeze, even if the API errors
     await setPageFrozen(false);
   }
 
-  // Remove the "Thinking..." message
-  if (chatMessagesEl && chatMessagesEl.lastChild) {
-    chatMessagesEl.removeChild(chatMessagesEl.lastChild);
+  // If we only showed "Thinking..." and no progress, remove it
+  if (!progressMessageEl && chatMessagesEl && chatMessagesEl.lastChild) {
+    const lastMsg = chatMessagesEl.lastChild.querySelector('.message__body');
+    if (lastMsg && lastMsg.textContent === "Thinking...") {
+      chatMessagesEl.removeChild(chatMessagesEl.lastChild);
+    }
   }
 
-  // Show actual response
-  appendMessage("assistant", reply);
+  // Show actual response (only if it's not empty and different from progress)
+  if (reply && reply.trim()) {
+    appendMessage("assistant", reply);
+  }
 }
 
 /**

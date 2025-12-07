@@ -246,83 +246,218 @@ class LLMClient {
   }
 
   /**
-   * Task A: Planner LLM call - determines intent (question vs action)
+   * Parse context object to extract structured data
+   * @param {string|Object} context - Page context
+   * @returns {Object} - Parsed context with url, title, html, text
+   */
+  _parseContext(context) {
+    if (typeof context === 'string') {
+      return { url: '', title: '', html: '', text: context };
+    }
+
+    if (context && typeof context === 'object') {
+      return {
+        url: context.url || '',
+        title: context.title || '',
+        html: context.html || '',
+        text: context.text || ''
+      };
+    }
+
+    return { url: '', title: '', html: '', text: '' };
+  }
+
+  /**
+   * Task A: Planner LLM call - determines intent (question vs action) using tool calling
    * @param {string} context - Page context (HTML + text)
    * @param {string} userPrompt - User's question or request
-   * @returns {Promise<{intent: string, answer?: string, action?: {type: string, target: string, value?: string}}>}
+   * @param {Array} tools - Array of available tools/actions
+   * @returns {Promise<{intent: string, answer?: string, toolCalls?: Array}>}
    */
-  async plannerCall(context, userPrompt) {
+  async plannerCall(context, userPrompt, tools = null) {
     console.log('[LLMClient.plannerCall] Starting planner call');
     console.log('[LLMClient.plannerCall] User prompt:', userPrompt);
     console.log('[LLMClient.plannerCall] Context length:', context?.length || 0);
-    
+    console.log('[LLMClient.plannerCall] Tools provided:', tools ? tools.length : 0);
+
     if (!this.isInitialized) {
       console.log('[LLMClient.plannerCall] Not initialized, initializing...');
       await this.initialize();
       console.log('[LLMClient.plannerCall] Initialization complete');
     }
 
-    console.log('[LLMClient.plannerCall] Building planner prompt...');
-    const plannerPrompt = `You are a browser automation assistant. Analyze the user's request and determine if it's a question about the page content or an action to perform.
+    // For models that may not support native tool calling, use JSON output instead
+    const useNativeTools = false; // Set to false for better compatibility with HuggingFace models
 
-Page Context:
-${context}
+    let systemMessage, userMessage, requestBody;
 
-User Request: ${userPrompt}
+    if (useNativeTools && tools && tools.length > 0) {
+      // Native tool calling approach (OpenAI-style)
+      systemMessage = `You are a browser automation assistant. Your job is to either ANSWER questions OR PERFORM actions by calling tools.`;
 
-Respond with a JSON object in this exact format:
-- If it's a question: {"intent": "question", "answer": "your answer here"}
-- If it's an action: {"intent": "action", "action": {"type": "click|fill|scroll|select|check|hover|submit", "target": "description of element", "value": "optional value for fill/select"}}
+      userMessage = `Page Context (first 8000 chars):
+${context.substring(0, 8000)}
 
-Return ONLY valid JSON, no other text.`;
+User Request: ${userPrompt}`;
+
+      requestBody = {
+        model: this.currentLLM.MODEL,
+        messages: [
+          { role: 'system', content: systemMessage },
+          { role: 'user', content: userMessage }
+        ],
+        temperature: 0.3,
+        max_tokens: 512,
+        tools: tools,
+        tool_choice: 'auto'
+      };
+    } else {
+      // JSON-based approach (more compatible)
+      // Import the prompt generator
+      const { generatePlannerSystemPrompt, generatePlannerUserMessage } = await import('./plannerPrompt.js');
+
+      // Parse context to structured format
+      const parsedContext = this._parseContext(context);
+
+      // Generate enhanced system prompt
+      systemMessage = generatePlannerSystemPrompt(parsedContext, tools);
+
+      // Generate user message
+      userMessage = generatePlannerUserMessage(userPrompt);
+
+      requestBody = {
+        model: this.currentLLM.MODEL,
+        messages: [
+          { role: 'system', content: systemMessage },
+          { role: 'user', content: userMessage }
+        ],
+        temperature: 0.3,
+        max_tokens: 1024  // Increased to allow for multi-step plans
+      };
+    }
 
     try {
-      console.log('[LLMClient.plannerCall] Calling generateCompletion...');
-      const response = await this.generateCompletion(plannerPrompt, {
-        temperature: 0.3,
-        maxTokens: 512
-      });
-      console.log('[LLMClient.plannerCall] Response received, length:', response?.length || 0);
-      console.log('[LLMClient.plannerCall] Response:', response);
+      console.log('[LLMClient.plannerCall] Calling API...');
+      console.log('[LLMClient.plannerCall] Using native tools:', useNativeTools);
 
-      // Try to extract JSON from response (handle cases where LLM adds extra text)
-      console.log('[LLMClient.plannerCall] Extracting JSON from response...');
-      let jsonStr = response.trim();
-      
-      // Remove markdown code blocks if present
-      if (jsonStr.startsWith('```')) {
-        const lines = jsonStr.split('\n');
-        jsonStr = lines.slice(1, -1).join('\n').trim();
-      }
-      
-      // Find JSON object in response
-      const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        jsonStr = jsonMatch[0];
+      // Make the API call
+      const response = await fetch(
+        `${this.currentLLM.baseURL}/chat/completions`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${this.currentLLM.token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody)
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`API Error (${response.status}): ${errorText}`);
       }
 
-      console.log('[LLMClient.plannerCall] Parsing JSON...');
-      const result = JSON.parse(jsonStr);
-      console.log('[LLMClient.plannerCall] JSON parsed successfully:', result);
-      
-      // Validate result structure
-      if (!result.intent || (result.intent !== 'question' && result.intent !== 'action')) {
-        console.error('[LLMClient.plannerCall] Invalid intent:', result.intent);
-        throw new Error('Invalid intent in LLM response');
+      const data = await response.json();
+      console.log('[LLMClient.plannerCall] Response received:', data);
+
+      if (data.error) {
+        throw new Error(data.error);
       }
 
-      if (result.intent === 'action' && !result.action) {
-        console.error('[LLMClient.plannerCall] Action intent but no action object');
-        throw new Error('Action intent requires action object');
+      if (!data.choices || data.choices.length === 0) {
+        throw new Error('No response from LLM');
       }
 
-      console.log('[LLMClient.plannerCall] Planner call successful, returning result');
-      return result;
+      const choice = data.choices[0];
+      const message = choice.message;
+
+      console.log('[LLMClient.plannerCall] Message:', message);
+
+      // Handle native tool calls (if supported)
+      if (message.tool_calls && message.tool_calls.length > 0) {
+        console.log('[LLMClient.plannerCall] Native tool calls detected:', message.tool_calls);
+        return {
+          intent: 'action',
+          toolCalls: message.tool_calls
+        };
+      }
+
+      // Handle JSON-based response
+      if (message.content) {
+        console.log('[LLMClient.plannerCall] Content received:', message.content);
+
+        // Try to extract JSON from the response
+        let jsonStr = message.content.trim();
+
+        // Remove markdown code blocks if present
+        if (jsonStr.includes('```')) {
+          const jsonMatch = jsonStr.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+          if (jsonMatch) {
+            jsonStr = jsonMatch[1];
+          }
+        }
+
+        // Find JSON object in response
+        const jsonObjMatch = jsonStr.match(/\{[\s\S]*\}/);
+        if (jsonObjMatch) {
+          jsonStr = jsonObjMatch[0];
+        }
+
+        try {
+          const parsed = JSON.parse(jsonStr);
+          console.log('[LLMClient.plannerCall] Parsed JSON:', parsed);
+
+          if (parsed.intent === 'question' && parsed.answer) {
+            return {
+              intent: 'question',
+              answer: parsed.answer
+            };
+          } else if (parsed.intent === 'action' && parsed.plan && Array.isArray(parsed.plan)) {
+            // Multi-step action plan
+            console.log('[LLMClient.plannerCall] Multi-step plan detected with', parsed.plan.length, 'steps');
+            return {
+              intent: 'action',
+              toolCalls: parsed.plan.map(step => ({
+                step: step.step,
+                description: step.description,
+                function: {
+                  name: step.function,
+                  arguments: JSON.stringify(step.params)
+                }
+              }))
+            };
+          } else if (parsed.intent === 'action' && parsed.function && parsed.params) {
+            // Single action - convert to tool call format
+            return {
+              intent: 'action',
+              toolCalls: [{
+                function: {
+                  name: parsed.function,
+                  arguments: JSON.stringify(parsed.params)
+                }
+              }]
+            };
+          }
+        } catch (parseError) {
+          console.warn('[LLMClient.plannerCall] Failed to parse JSON, treating as plain answer:', parseError);
+        }
+
+        // If we couldn't parse as JSON, treat the whole content as an answer
+        return {
+          intent: 'question',
+          answer: message.content
+        };
+      }
+
+      // Fallback
+      throw new Error('Invalid response from LLM');
+
     } catch (error) {
       console.error('[LLMClient.plannerCall] Planner LLM call failed:', error);
       console.error('[LLMClient.plannerCall] Error message:', error.message);
       console.error('[LLMClient.plannerCall] Error stack:', error.stack);
-      // Fallback: treat as question if parsing fails
+      // Fallback: treat as question if error occurs
       return {
         intent: 'question',
         answer: 'I encountered an error processing your request. Please try rephrasing it.'

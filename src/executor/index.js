@@ -7,8 +7,6 @@
  * ===========================================
  */
 
-// Import LLM client for generating action code
-import { LLMClient } from '../llm/LLMClient.js';
 // Import retry logic for multiple attempts
 import { executeWithRetry } from './retry.js';
 // Import logger for debugging and tracking
@@ -16,332 +14,422 @@ import { Logger } from '../utils/logger.js';
 // Import HTML diff utility for change detection
 import { hasChanged } from './diff.js';
 
-// LLM client instance - lazy initialized on first use
-let llmClient = null;
+const CHANGE_POLL_TIMEOUT_MS = 4000;
+const CHANGE_POLL_INTERVAL_MS = 300;
+const POST_ACTION_SETTLE_MS = 500;
 
-/**
- * Get or create LLM client instance (singleton pattern)
- * Ensures only one LLMClient exists throughout the extension
- * @returns {LLMClient} - The LLM client instance
- */
-function getLLMClient() {
-  // Create new instance if none exists
-  if (!llmClient) {
-    llmClient = new LLMClient();
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function getActiveTabId() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tab && tab.id ? tab.id : null;
+}
+
+async function getPageHTML(tabId) {
+  if (!tabId) return '';
+
+  const results = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => document.body.outerHTML
+  });
+
+  return results && results[0] ? results[0].result : '';
+}
+
+async function waitForDomChange(tabId, htmlBefore) {
+  let latestHtml = htmlBefore || '';
+
+  // Small settle delay before starting the polling loop
+  if (POST_ACTION_SETTLE_MS > 0) {
+    await sleep(POST_ACTION_SETTLE_MS);
   }
-  // Return existing or newly created instance
-  return llmClient;
+
+  const startTime = Date.now();
+  while (Date.now() - startTime < CHANGE_POLL_TIMEOUT_MS) {
+    try {
+      latestHtml = await getPageHTML(tabId);
+      if (latestHtml && hasChanged(htmlBefore, latestHtml)) {
+        return { changed: true, htmlAfter: latestHtml };
+      }
+    } catch (error) {
+      Logger.warn('[waitForDomChange] Failed to poll HTML:', error);
+      break;
+    }
+
+    await sleep(CHANGE_POLL_INTERVAL_MS);
+  }
+
+  // Final comparison using the last HTML snapshot
+  return {
+    changed: hasChanged(htmlBefore, latestHtml),
+    htmlAfter: latestHtml
+  };
 }
 
 /**
- * Execute generated JavaScript code in the page context
- * Uses chrome.scripting.executeScript() with world: 'MAIN' to execute in page context
- * This bypasses extension CSP and uses the page's CSP instead
- * @param {string} code - JavaScript code to execute
- * @returns {Promise<{success: boolean, error?: string}>} - Execution result
+ * Execute a WebAction in the page context
+ * @param {string} actionName - Name of the action to execute
+ * @param {Array} params - Parameters for the action
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-async function runCode(code) {
-  Logger.info('[runCode] Starting code execution');
-  Logger.debug('[runCode] Code to execute:', code);
-  
+async function executeWebAction(actionName, params) {
+  Logger.info('[executeWebAction] Executing web action:', actionName);
+  Logger.debug('[executeWebAction] Params:', params);
+
   try {
-    Logger.debug('[runCode] Getting active tab...');
-    // Get the active tab to execute code in
+    Logger.debug('[executeWebAction] Getting active tab...');
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    
+
     if (!tab || !tab.id) {
-      Logger.error('[runCode] No active tab found');
+      Logger.error('[executeWebAction] No active tab found');
       return { success: false, error: 'No active tab found' };
     }
 
-    Logger.info(`[runCode] Found tab ${tab.id}, executing code in MAIN world`);
-    
-    // Execute the code in the page's MAIN world (bypasses extension CSP)
-    // Trusted Types blocks Function constructor, eval, script.textContent, and iframe.srcdoc IN THE PAGE CONTEXT
-    // Solution: Use new Function() in the EXTENSION context to create the function,
-    // then inject that pre-compiled function into the page
-    // Since the function is already compiled, Trusted Types won't block it
-    
-    Logger.debug('[runCode] Creating function from code in extension context...');
-    // Create the function in extension context (not blocked by page's Trusted Types)
-    const executeFunc = new Function(`
-      console.log('[Page Context] Executing injected code');
-      try {
-        // Execute the code directly - it's already compiled as part of this function
-        ${code}
-        
-        console.log('[Page Context] Code execution completed successfully');
-        return { __success: true };
-      } catch (error) {
-        console.error('[Page Context] Code execution error:', error);
-        return { 
-          __error: error.message, 
-          __stack: error.stack, 
-          __name: error.name 
-        };
-      }
-    `);
-    
-    Logger.debug('[runCode] Function created, injecting into page...');
-    // Inject the pre-compiled function into the page
+    Logger.info(`[executeWebAction] Found tab ${tab.id}, executing action in MAIN world`);
+
+    // Execute the action in the page's MAIN world
+    // We pass the action name and params as arguments, then reconstruct the action in the page context
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      world: 'MAIN', // Execute in page's main world, not isolated world
-      func: executeFunc
-    });
-
-    Logger.debug('[runCode] Script execution completed, processing results...');
-    Logger.debug('[runCode] Results:', results);
-
-    // Check for execution errors
-    if (results && results[0]) {
-      const result = results[0].result;
-      Logger.debug('[runCode] Result from page:', result);
-      
-      // Check if there was an error
-      if (result && typeof result === 'object' && result.__error) {
-        Logger.error('[runCode] Code execution error detected:', result.__error);
-        Logger.error('[runCode] Error stack:', result.__stack);
-        return { success: false, error: result.__error };
-      }
-      
-      // If result is a promise, await it
-      if (result instanceof Promise) {
-        Logger.debug('[runCode] Result is a Promise, awaiting...');
+      world: 'MAIN',
+      func: (actionName, ...params) => {
         try {
-          const promiseResult = await result;
-          Logger.debug('[runCode] Promise resolved:', promiseResult);
+          // Define all WebActions inline in the page context
+          const WebActions = {
+            click: (selector) => {
+              const element = document.querySelector(selector);
+              if (!element) throw new Error(`Element not found: ${selector}`);
+              element.click();
+              return { success: true, message: `Clicked element: ${selector}` };
+            },
+            fill: (selector, value) => {
+              const element = document.querySelector(selector);
+              if (!element) throw new Error(`Input element not found: ${selector}`);
+              element.value = value;
+              element.dispatchEvent(new Event('input', { bubbles: true }));
+              element.dispatchEvent(new Event('change', { bubbles: true }));
+              return { success: true, message: `Filled ${selector} with: ${value}` };
+            },
+            select: (selector, value) => {
+              const element = document.querySelector(selector);
+              if (!element || element.tagName !== 'SELECT') throw new Error(`Select element not found: ${selector}`);
+              let found = false;
+              for (const option of element.options) {
+                if (option.value === value || option.text === value) {
+                  option.selected = true;
+                  found = true;
+                  break;
+                }
+              }
+              if (!found) throw new Error(`Option not found in select: ${value}`);
+              element.dispatchEvent(new Event('change', { bubbles: true }));
+              return { success: true, message: `Selected ${value} in ${selector}` };
+            },
+            check: (selector, checked = true) => {
+              const element = document.querySelector(selector);
+              if (!element || element.type !== 'checkbox') throw new Error(`Checkbox not found: ${selector}`);
+              element.checked = checked;
+              element.dispatchEvent(new Event('change', { bubbles: true }));
+              return { success: true, message: `${checked ? 'Checked' : 'Unchecked'} ${selector}` };
+            },
+            scroll: (target, direction = 'vertical') => {
+              if (typeof target === 'string') {
+                const element = document.querySelector(target);
+                if (!element) throw new Error(`Element not found: ${target}`);
+                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return { success: true, message: `Scrolled to ${target}` };
+              } else if (typeof target === 'number') {
+                if (direction === 'horizontal') {
+                  window.scrollBy({ left: target, behavior: 'smooth' });
+                } else {
+                  window.scrollBy({ top: target, behavior: 'smooth' });
+                }
+                return { success: true, message: `Scrolled ${direction} by ${target}px` };
+              }
+              throw new Error('Invalid scroll target');
+            },
+            hover: (selector) => {
+              const element = document.querySelector(selector);
+              if (!element) throw new Error(`Element not found: ${selector}`);
+              element.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+              element.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+              return { success: true, message: `Hovered over ${selector}` };
+            },
+            submit: (selector) => {
+              const element = document.querySelector(selector);
+              if (!element || element.tagName !== 'FORM') throw new Error(`Form not found: ${selector}`);
+              element.submit();
+              return { success: true, message: `Submitted form: ${selector}` };
+            },
+            navigate: (url) => {
+              window.location.href = url;
+              return { success: true, message: `Navigating to ${url}` };
+            },
+            clickLink: (text, exact = false) => {
+              const links = Array.from(document.querySelectorAll('a'));
+              const link = links.find(a => exact ? a.textContent.trim() === text : a.textContent.includes(text));
+              if (!link) throw new Error(`Link not found with text: ${text}`);
+              link.click();
+              return { success: true, message: `Clicked link: ${text}` };
+            },
+            clickButton: (text, exact = false) => {
+              const normalize = (str) => (str || '').replace(/\s+/g, ' ').trim().toLowerCase();
+              const target = normalize(text);
+              const candidates = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], input[type="reset"], [role="button"]'));
+
+              const button = candidates.find(b => {
+                const label = normalize(b.textContent);
+                const value = normalize(b.value);
+                const aria = normalize(b.getAttribute('aria-label'));
+                const title = normalize(b.getAttribute('title'));
+
+                if (exact) {
+                  return label === target || value === target || aria === target || title === target;
+                }
+
+                return (label && label.includes(target)) ||
+                       (value && value.includes(target)) ||
+                       (aria && aria.includes(target)) ||
+                       (title && title.includes(target));
+              });
+
+              if (!button) throw new Error(`Button not found with text: ${text}`);
+              button.click();
+              return { success: true, message: `Clicked button: ${text}` };
+            },
+            waitForElement: (selector, timeout = 5000) => {
+              return new Promise((resolve, reject) => {
+                const startTime = Date.now();
+                const checkInterval = 100;
+
+                const checkElement = () => {
+                  const element = document.querySelector(selector);
+                  if (element) {
+                    resolve({ success: true, message: `Element found: ${selector}` });
+                  } else if (Date.now() - startTime >= timeout) {
+                    reject(new Error(`Timeout waiting for element: ${selector}`));
+                  } else {
+                    setTimeout(checkElement, checkInterval);
+                  }
+                };
+
+                checkElement();
+              });
+            },
+            getText: (selector) => {
+              const element = document.querySelector(selector);
+              if (!element) throw new Error(`Element not found: ${selector}`);
+              const text = element.textContent.trim();
+              return { success: true, message: `Text: ${text}`, data: text };
+            },
+            getValue: (selector) => {
+              const element = document.querySelector(selector);
+              if (!element) throw new Error(`Element not found: ${selector}`);
+              const value = element.value;
+              return { success: true, message: `Value: ${value}`, data: value };
+            },
+            clear: (selector) => {
+              const element = document.querySelector(selector);
+              if (!element) throw new Error(`Input element not found: ${selector}`);
+              element.value = '';
+              element.dispatchEvent(new Event('input', { bubbles: true }));
+              element.dispatchEvent(new Event('change', { bubbles: true }));
+              return { success: true, message: `Cleared ${selector}` };
+            },
+            focus: (selector) => {
+              const element = document.querySelector(selector);
+              if (!element) throw new Error(`Element not found: ${selector}`);
+              element.focus();
+              return { success: true, message: `Focused on ${selector}` };
+            },
+            pressKey: (key, selector = null) => {
+              const target = selector ? document.querySelector(selector) : document.activeElement;
+              if (!target) throw new Error(selector ? `Element not found: ${selector}` : 'No active element');
+              target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+              target.dispatchEvent(new KeyboardEvent('keypress', { key, bubbles: true }));
+              target.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true }));
+              return { success: true, message: `Pressed key: ${key}` };
+            },
+            openNewTab: (url) => {
+              window.open(url, '_blank');
+              return { success: true, message: `Opened new tab: ${url}` };
+            },
+            reload: () => {
+              window.location.reload();
+              return { success: true, message: 'Page reloaded' };
+            },
+            goBack: () => {
+              window.history.back();
+              return { success: true, message: 'Navigated back' };
+            },
+            goForward: () => {
+              window.history.forward();
+              return { success: true, message: 'Navigated forward' };
+            }
+          };
+
+          // Execute the requested action
+          if (!WebActions[actionName]) {
+            throw new Error(`Unknown action: ${actionName}`);
+          }
+
+          return WebActions[actionName](...params);
+
         } catch (error) {
-          Logger.error('[runCode] Promise execution error:', error);
           return { success: false, error: error.message };
         }
+      },
+      args: [actionName, ...params]
+    });
+
+    Logger.debug('[executeWebAction] Script execution completed, processing results...');
+    Logger.debug('[executeWebAction] Results:', results);
+
+    if (results && results[0]) {
+      const result = results[0].result;
+      Logger.debug('[executeWebAction] Result from page:', result);
+
+      // Check for errors
+      if (result && typeof result === 'object') {
+        if (result.error) {
+          Logger.error('[executeWebAction] Action error:', result.error);
+          return { success: false, error: result.error };
+        }
+
+        // Success
+        if (result.success !== undefined) {
+          return result;
+        }
       }
-    } else {
-      Logger.warn('[runCode] No results returned from script execution');
     }
-    
-    // Log successful execution
-    Logger.info('[runCode] Code executed successfully');
-    // Return success result
+
+    // Default success
+    Logger.info('[executeWebAction] Action executed successfully');
     return { success: true };
-    
+
   } catch (error) {
-    // Log the execution error
-    Logger.error('[runCode] Code execution failed with exception:', error);
-    Logger.error('[runCode] Error message:', error.message);
-    Logger.error('[runCode] Error stack:', error.stack);
-    // Return failure with error message
+    Logger.error('[executeWebAction] Action execution failed:', error);
+    Logger.error('[executeWebAction] Error message:', error.message);
+    Logger.error('[executeWebAction] Error stack:', error.stack);
     return { success: false, error: error.message };
   }
 }
 
+
 /**
- * Main entry point - execute an action on the page
- * Generates code via LLM and executes with retry logic
+ * Main entry point - execute an action on the page using WebActions
  * @param {Object} action - Action to perform
- * @param {string} action.type - Type of action (click, fill, scroll, etc.)
- * @param {string} action.target - Description of target element
- * @param {string} [action.value] - Optional value for fill/select actions
+ * @param {string} action.name - Name of the WebAction to execute
+ * @param {Object} action.params - Parameters for the action
  * @returns {Promise<{success: boolean, message: string}>} - Execution result
  */
 async function executeAction(action) {
   // Log the action being executed
   Logger.info('[executeAction] Starting action execution');
   Logger.info('[executeAction] Action details:', JSON.stringify(action, null, 2));
-  
+
   // Validate action object has required fields
-  if (!action || !action.type || !action.target) {
-    Logger.error('[executeAction] Invalid action: missing type or target');
+  if (!action || !action.name || !action.params) {
+    Logger.error('[executeAction] Invalid action: missing name or params');
     Logger.error('[executeAction] Action received:', action);
     // Return early with validation error
-    return { success: false, message: 'Invalid action: missing type or target' };
+    return { success: false, message: 'Invalid action: missing name or params' };
   }
-  
+
   Logger.debug('[executeAction] Action validation passed');
-  Logger.debug('[executeAction] Getting LLM client instance...');
-  // Get the LLM client instance
-  const llm = getLLMClient();
-  Logger.debug('[executeAction] LLM client obtained');
+  Logger.debug('[executeAction] Action name:', action.name);
+  Logger.debug('[executeAction] Action params:', action.params);
   
-  Logger.info('[executeAction] Starting retry wrapper (max 3 attempts)');
-  // Use retry wrapper for the execution (default 3 attempts)
-  const result = await executeWithRetry(async (attempt) => {
-    Logger.info(`[executeAction] Attempt ${attempt}: Starting execution`);
-    
-    // Get fresh page context for each attempt
-    // This uses the existing getPageContext() from script.js (available globally)
-    Logger.debug(`[executeAction] Attempt ${attempt}: Getting page context...`);
-    let context;
-    try {
-      // Try to call getPageContext if available globally
-      if (typeof getPageContext === 'function') {
-        Logger.debug(`[executeAction] Attempt ${attempt}: Using global getPageContext()`);
-        context = await getPageContext();
-        Logger.debug(`[executeAction] Attempt ${attempt}: Context retrieved via global function`);
-      } else {
-        Logger.debug(`[executeAction] Attempt ${attempt}: getPageContext not available, using chrome.scripting fallback`);
-        // Fallback: getPageContext might not be available in module context
-        // We need to get it via chrome.scripting.executeScript
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (!tab || !tab.id) {
-          return { success: false, message: 'Failed to get active tab' };
-        }
-        
-        const results = await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: () => {
-            const clone = document.body.cloneNode(true);
-            const scripts = clone.querySelectorAll("script, style, noscript");
-            scripts.forEach((el) => el.remove());
-            const text = clone.innerText.replace(/\s+/g, " ").trim();
-            return {
-              url: window.location.href,
-              title: document.title,
-              text: text,
-              html: document.body.outerHTML
-            };
-          }
-        });
-        
-        context = results && results[0] && results[0].result
-          ? results[0].result
-          : { url: "", title: "", text: "", html: "" };
-        Logger.debug(`[executeAction] Attempt ${attempt}: Context retrieved via chrome.scripting`);
+  // Extract parameters from action.params as an array for WebActions
+  const paramValues = Object.values(action.params);
+
+  Logger.info('[executeAction] Preparing to execute WebAction...');
+  Logger.debug('[executeAction] Action name:', action.name);
+  Logger.debug('[executeAction] Param values:', paramValues);
+
+  try {
+    // Execute the action with retry logic
+    Logger.info('[executeAction] Starting retry wrapper (max 3 attempts)');
+    const result = await executeWithRetry(async (attempt) => {
+      Logger.info(`[executeAction] Attempt ${attempt}: Executing ${action.name}...`);
+
+      const tabId = await getActiveTabId();
+      if (!tabId) {
+        Logger.error('[executeAction] No active tab found');
+        return { success: false, message: 'No active tab found' };
       }
-    } catch (error) {
-      Logger.error(`[executeAction] Attempt ${attempt}: Failed to get page context:`, error);
-      Logger.error(`[executeAction] Attempt ${attempt}: Error details:`, error.message, error.stack);
-      return { success: false, message: `Failed to get page context: ${error.message}` };
-    }
-    
-    Logger.debug(`[executeAction] Attempt ${attempt}: Context retrieved:`, {
-      url: context.url,
-      title: context.title,
-      textLength: context.text?.length || 0,
-      htmlLength: context.html?.length || 0
-    });
-    
-    // Validate we got HTML content
-    if (!context.html) {
-      Logger.error(`[executeAction] Attempt ${attempt}: No HTML content in context`);
-      return { success: false, message: 'Failed to get page HTML' };
-    }
-    
-    // Store HTML before action execution
-    const htmlBefore = context.html;
-    Logger.debug(`[executeAction] Attempt ${attempt}: HTML before action (length: ${htmlBefore.length})`);
-    
-    // Generate code via LLM using the page HTML and action details
-    Logger.info(`[executeAction] Attempt ${attempt}: Calling LLM to generate code...`);
-    let llmResponse;
-    try {
-      Logger.debug(`[executeAction] Attempt ${attempt}: Calling llm.actionsCall with HTML (${context.html.length} chars) and action:`, action);
-      llmResponse = await llm.actionsCall(context.html, action);
-      Logger.info(`[executeAction] Attempt ${attempt}: LLM response received`);
-    } catch (error) {
-      Logger.error(`[executeAction] Attempt ${attempt}: LLM actionsCall failed:`, error);
-      Logger.error(`[executeAction] Attempt ${attempt}: Error message:`, error.message);
-      Logger.error(`[executeAction] Attempt ${attempt}: Error stack:`, error.stack);
-      return { success: false, message: `LLM call failed: ${error.message}` };
-    }
-    
-    // Validate LLM returned code
-    if (!llmResponse || !llmResponse.code) {
-      Logger.error(`[executeAction] Attempt ${attempt}: LLM response invalid:`, llmResponse);
-      return { success: false, message: 'LLM failed to generate code' };
-    }
-    
-    // Log the generated code and explanation
-    Logger.info(`[executeAction] Attempt ${attempt}: Code generated successfully`);
-    Logger.debug(`[executeAction] Attempt ${attempt}: Generated code:`, llmResponse.code);
-    Logger.debug(`[executeAction] Attempt ${attempt}: Explanation:`, llmResponse.explanation);
-    
-    // Execute the generated code in the page context
-    Logger.info(`[executeAction] Attempt ${attempt}: Executing generated code...`);
-    const execResult = await runCode(llmResponse.code);
-    Logger.info(`[executeAction] Attempt ${attempt}: Code execution completed:`, execResult);
-    
-    // Check if execution succeeded
-    if (!execResult.success) {
-      Logger.error(`[executeAction] Attempt ${attempt}: Code execution failed:`, execResult.error);
-      return { success: false, message: `Code execution failed: ${execResult.error}` };
-    }
-    
-    Logger.debug(`[executeAction] Attempt ${attempt}: Code executed successfully, waiting for DOM updates...`);
-    // Wait a bit for DOM changes to propagate (some actions trigger async updates)
-    await new Promise(resolve => setTimeout(resolve, 500));
-    Logger.debug(`[executeAction] Attempt ${attempt}: DOM update wait completed`);
-    
-    // Get HTML after action execution to check for changes
-    Logger.debug(`[executeAction] Attempt ${attempt}: Getting HTML after action execution...`);
-    let htmlAfter;
-    try {
-      if (typeof getPageContext === 'function') {
-        Logger.debug(`[executeAction] Attempt ${attempt}: Using global getPageContext() for after HTML`);
-        const contextAfter = await getPageContext();
-        htmlAfter = contextAfter.html;
-      } else {
-        Logger.debug(`[executeAction] Attempt ${attempt}: Using chrome.scripting for after HTML`);
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (tab && tab.id) {
-          const results = await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
-            func: () => document.body.outerHTML
-          });
-          htmlAfter = results && results[0] ? results[0].result : null;
-        }
+
+      // Get HTML before action
+      let htmlBefore = '';
+      try {
+        htmlBefore = await getPageHTML(tabId);
+      } catch (error) {
+        Logger.warn(`[executeAction] Attempt ${attempt}: Failed to get HTML before:`, error);
       }
-      Logger.debug(`[executeAction] Attempt ${attempt}: HTML after action retrieved (length: ${htmlAfter?.length || 0})`);
-    } catch (error) {
-      Logger.warn(`[executeAction] Attempt ${attempt}: Failed to get HTML after execution:`, error);
-      // For some actions (like scroll), HTML might not change, so we'll allow success
-      // if code executed without error
-      htmlAfter = htmlBefore; // Use same HTML to avoid false positives
-      Logger.debug(`[executeAction] Attempt ${attempt}: Using htmlBefore as htmlAfter due to error`);
-    }
-    
-    // Check if HTML changed (indicates action had an effect)
-    Logger.debug(`[executeAction] Attempt ${attempt}: Checking for HTML changes...`);
-    const changed = htmlAfter && hasChanged(htmlBefore, htmlAfter);
-    Logger.info(`[executeAction] Attempt ${attempt}: HTML change check result:`, changed);
-    
-    if (changed) {
-      Logger.info(`[executeAction] Attempt ${attempt}: HTML change detected - action successful`);
-      return { 
-        success: true, 
-        message: llmResponse.explanation || 'Action executed successfully and page changed' 
-      };
-    } else {
-      // Some actions might not change HTML (e.g., scroll, hover)
-      // For these, we'll consider it successful if code executed without error
-      // But log a warning that no change was detected
-      Logger.warn(`[executeAction] Attempt ${attempt}: No HTML change detected after action execution`);
-      
-      // For scroll actions, this is expected - consider it success
-      if (action.type === 'scroll' || action.type === 'hover') {
-        Logger.info(`[executeAction] Attempt ${attempt}: Action type '${action.type}' doesn't require HTML change, considering success`);
-        return { 
-          success: true, 
-          message: llmResponse.explanation || 'Action executed successfully (no HTML change expected)' 
+
+      // Execute the action
+      const execResult = await executeWebAction(action.name, paramValues);
+      Logger.info(`[executeAction] Attempt ${attempt}: Execution result:`, execResult);
+
+      // Check if execution succeeded
+      if (!execResult.success) {
+        Logger.error(`[executeAction] Attempt ${attempt}: Action failed:`, execResult.error);
+        return { success: false, message: execResult.error || 'Action execution failed' };
+      }
+
+      // Skip HTML change check for simple fill actions to avoid false negatives
+      if (action.name === 'fill') {
+        return {
+          success: true,
+          message: execResult.message || 'Action fill executed successfully'
         };
       }
-      
-      // For other actions, no change might indicate failure
-      // Return failure so retry can try a different approach
-      Logger.warn(`[executeAction] Attempt ${attempt}: Action executed but no change detected, will retry`);
-      return { 
-        success: false, 
-        message: 'Action executed but no page change detected. The element might not exist or the action had no effect.' 
-      };
-    }
-  });
-  
-  Logger.info('[executeAction] Retry wrapper completed');
-  Logger.info('[executeAction] Final result:', result);
-  // Return the final result from retry wrapper
-  return result;
+
+      // Get HTML after action
+      const { changed, htmlAfter } = await waitForDomChange(tabId, htmlBefore);
+      Logger.info(`[executeAction] Attempt ${attempt}: HTML change detected:`, changed);
+
+      // Some actions don't change HTML (scroll, hover, navigate, fill, etc.)
+      // fill is included because input values are DOM properties, not HTML attributes
+      const noChangeExpected = ['scroll', 'hover', 'navigate', 'reload', 'goBack', 'goForward', 'openNewTab', 'focus', 'pressKey', 'fill', 'clear'];
+
+      if (changed) {
+        Logger.info(`[executeAction] Attempt ${attempt}: Action successful - page changed`);
+        return {
+          success: true,
+          message: execResult.message || 'Action executed successfully'
+        };
+      } else if (noChangeExpected.includes(action.name)) {
+        Logger.info(`[executeAction] Attempt ${attempt}: Action '${action.name}' doesn't require HTML change`);
+        return {
+          success: true,
+          message: execResult.message || `Action ${action.name} executed successfully`
+        };
+      } else {
+        Logger.warn(`[executeAction] Attempt ${attempt}: No HTML change detected, will retry`);
+        return {
+          success: false,
+          message: 'Action executed but no page change detected'
+        };
+      }
+    });
+
+    Logger.info('[executeAction] Retry wrapper completed');
+    Logger.info('[executeAction] Final result:', result);
+    // Return the final result from retry wrapper
+    return result;
+
+  } catch (error) {
+    Logger.error('[executeAction] Failed to create or execute WebAction:', error);
+    Logger.error('[executeAction] Error message:', error.message);
+    Logger.error('[executeAction] Error stack:', error.stack);
+    return {
+      success: false,
+      message: `Failed to execute action: ${error.message}`
+    };
+  }
 }
 
 // Export functions for ES6 modules
-export { executeAction, runCode };
+export { executeAction, executeWebAction };
 
