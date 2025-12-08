@@ -299,43 +299,34 @@ async function handleChatSubmit(event) {
 
   let reply;
   let progressMessageEl = null;
+  let progressContainer = null;
 
   try {
     // Create a callback for progress updates
-    const onProgress = (progress) => {
+    const onProgress = (taskList, currentStep, totalSteps, status) => {
       // Remove "Thinking..." message if still there
-      if (chatMessagesEl && chatMessagesEl.lastChild && chatMessagesEl.lastChild.textContent === "Thinking...") {
-        chatMessagesEl.removeChild(chatMessagesEl.lastChild);
+      if (chatMessagesEl && chatMessagesEl.lastChild) {
+        const lastMsg = chatMessagesEl.lastChild.querySelector('.message__body');
+        if (lastMsg && lastMsg.textContent === "Thinking...") {
+          chatMessagesEl.removeChild(chatMessagesEl.lastChild);
+        }
       }
 
-      // Create or update progress message
+      // Create progress message if it doesn't exist
       if (!progressMessageEl) {
-        const container = document.createElement("div");
-        container.className = "message message--assistant";
-        const body = document.createElement("div");
-        body.className = "message__body";
-        container.appendChild(body);
-        chatMessagesEl.appendChild(container);
-        progressMessageEl = body;
+        progressContainer = document.createElement("div");
+        progressContainer.className = "message message--assistant";
+        progressMessageEl = document.createElement("div");
+        progressMessageEl.className = "message__body";
+        progressContainer.appendChild(progressMessageEl);
+        chatMessagesEl.appendChild(progressContainer);
       }
 
-      // Format progress update
-      const statusIcon = progress.status === 'completed' ? '✓' :
-                        progress.status === 'failed' ? '✗' : '⋯';
-      const stepText = `Step ${progress.step}/${progress.total}: ${progress.description} ${statusIcon}`;
+      // Update the message with the current task list
+      const header = `Executing actions (${currentStep}/${totalSteps})...\n\n`;
+      progressMessageEl.textContent = header + taskList;
 
-      // Update or append to progress message
-      const lines = progressMessageEl.textContent.split('\n').filter(l => l.trim());
-
-      if (progress.status === 'executing') {
-        // Add new step
-        lines.push(stepText);
-      } else {
-        // Update last line with completion status
-        lines[lines.length - 1] = stepText;
-      }
-
-      progressMessageEl.textContent = lines.join('\n');
+      // Auto-scroll to bottom
       chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
     };
 
@@ -353,8 +344,11 @@ async function handleChatSubmit(event) {
     }
   }
 
-  // Show actual response (only if it's not empty and different from progress)
-  if (reply && reply.trim()) {
+  // If we have a progress message, update it with the final result
+  if (progressMessageEl && reply && reply.trim()) {
+    progressMessageEl.textContent = reply;
+  } else if (reply && reply.trim()) {
+    // Only append new message if we didn't have progress updates
     appendMessage("assistant", reply);
   }
 }
