@@ -15,6 +15,8 @@ const chatFormEl = document.getElementById("chatForm");
 /** @type {HTMLTextAreaElement | null} */
 const chatInputEl = document.getElementById("chatInput");
 /** @type {HTMLButtonElement | null} */
+const newChatBtn = document.getElementById("newChatBtn");
+/** @type {HTMLButtonElement | null} */
 const chatToggleBtn = document.getElementById("chatToggle");
 /** @type {HTMLButtonElement | null} */
 const settingsBtn = document.getElementById("settingsBtn");
@@ -370,6 +372,27 @@ function toggleChatPanel() {
 }
 
 /**
+ * Start a brand-new chat session:
+ * - Clear all existing messages
+ * - Reset the input field
+ * - Show the initial welcome message again
+ */
+function startNewChat() {
+  if (chatMessagesEl) {
+    chatMessagesEl.innerHTML = "";
+  }
+  if (chatInputEl) {
+    chatInputEl.value = "";
+    autoResizeTextArea(chatInputEl);
+  }
+
+  appendMessage(
+    "assistant",
+    "Hi, I’m BrowseMate Chat living in your sidebar. Type a message below to start a conversation."
+  );
+}
+
+/**
  * Toggle the Settings page as a separate tab.
  * If a Settings tab is already open, close it; otherwise open it.
  */
@@ -457,6 +480,10 @@ function initChat() {
 
   if (chatToggleBtn) {
     chatToggleBtn.addEventListener("click", toggleChatPanel);
+  }
+
+  if (newChatBtn) {
+    newChatBtn.addEventListener("click", startNewChat);
   }
 
   if (settingsBtn) {
