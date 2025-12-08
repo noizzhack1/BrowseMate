@@ -52,9 +52,6 @@ async function loadSettings() {
     const result = await chrome.storage.sync.get('browsemate_settings');
     const settings = result.browsemate_settings || DEFAULT_SETTINGS;
 
-    // First populate model options from config so we can safely select a value
-    await populateModelsFromConfig(settings);
-
     // Populate form fields
     document.getElementById('hfToken').value = settings.hfToken || '';
     document.getElementById('selectedLLM').value = settings.selectedLLM || (llms[0]?.name || '');
