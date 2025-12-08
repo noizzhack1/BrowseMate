@@ -179,14 +179,8 @@ function appendMessage(role, text) {
 }
 
 /**
-<<<<<<< HEAD
- * Call the configured LLM with the user's message.
- * Uses Hugging Face router for \"config\" providers and a custom
- * OpenAI-compatible endpoint for the \"local\" provider.
-=======
  * Call Task A orchestrator to process user request
  * This replaces the direct LLM call with the full Task A + Task B flow
->>>>>>> origin/main
  * @param {string} userText
  * @param {boolean} includeContext
  * @param {Function} onProgress - Optional callback for progress updates
@@ -198,97 +192,6 @@ async function callLLMAPI(userText, includeContext = false, onProgress = null) {
   console.log('[callLLMAPI] Include context:', includeContext);
   
   try {
-<<<<<<< HEAD
-    // Load settings from storage
-    const result = await chrome.storage.sync.get('browsemate_settings');
-    const settings = result.browsemate_settings;
-
-    if (!settings) {
-      return "Please configure your model settings first (click ⚙️ button).";
-    }
-
-    const providerType = settings.providerType || 'config';
-
-    // Determine endpoint, model, and auth based on provider
-    let endpoint = 'https://router.huggingface.co/v1/chat/completions';
-    let model = settings.hfModel;
-    let token = settings.hfToken || '';
-
-    if (providerType === 'local') {
-      if (!settings.localBaseUrl || !settings.localModel) {
-        return "Please configure your local model URL and name in Settings.";
-      }
-      const base = settings.localBaseUrl.replace(/\/+$/, '');
-      endpoint = `${base}/chat/completions`;
-      model = settings.localModel;
-      token = settings.localToken || ''; // optional
-    } else {
-      // Remote/HF provider requires token
-      if (!token) {
-        return "Please configure your Hugging Face API token in Settings (click ⚙️ button).";
-      }
-    }
-
-    // Prepare the message content
-    let messageContent = userText;
-
-    // Add page context if requested
-    if (includeContext) {
-      const context = await getPageContext();
-      if (context.url || context.text) {
-        messageContent = `Page Context:
-URL: ${context.url}
-Title: ${context.title}
-
-Page Content (first 3000 chars):
-${context.text}
-
----
-
-User Question: ${userText}`;
-      }
-    }
-
-    // Build headers dynamically (local model may not need auth)
-    const headers = {
-      'Content-Type': 'application/json'
-    };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-
-    // Use OpenAI-compatible chat completion format
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: 'user',
-            content: messageContent
-          }
-        ],
-        max_tokens: settings.maxTokens || 1024,
-        temperature: settings.temperature || 0.7
-      })
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`API Error (${response.status}): ${errorText}`);
-    }
-
-    const data = await response.json();
-
-    if (data.error) {
-      throw new Error(data.error);
-    }
-
-    // Handle OpenAI-compatible response format
-    if (data.choices && data.choices.length > 0) {
-      return data.choices[0].message.content || "No response generated.";
-=======
     // Get page context if requested
     let context = null;
     if (includeContext) {
@@ -300,7 +203,6 @@ User Question: ${userText}`;
         textLength: context.text?.length || 0,
         htmlLength: context.html?.length || 0
       });
->>>>>>> origin/main
     } else {
       console.log('[callLLMAPI] Context not requested, skipping');
     }
@@ -331,10 +233,6 @@ User Question: ${userText}`;
     }
 
   } catch (error) {
-<<<<<<< HEAD
-    console.error('LLM API Error:', error);
-    return `Error: ${error.message}\n\nPlease check your model settings and try again.`;
-=======
     console.error('[callLLMAPI] Task A processing error:', error);
     console.error('[callLLMAPI] Error message:', error.message);
     console.error('[callLLMAPI] Error stack:', error.stack);
@@ -344,7 +242,6 @@ User Question: ${userText}`;
     }
 
     return `Error: ${error.message || 'Unknown error'}\n\nPlease check your settings and try again.`;
->>>>>>> origin/main
   }
 }
 
