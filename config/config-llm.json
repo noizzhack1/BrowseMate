@@ -1,0 +1,20 @@
+{
+    "llms": [
+      {
+        "name": "Qwen",
+        "token": "enter-token-here",
+        "baseURL": "https://router.huggingface.co/v1",
+        "MODEL": "Qwen/Qwen2.5-32B-Instruct:featherless-ai",
+        "type": "planner",
+        "promptFile": "config/planner-prompt.txt"
+      },
+      {
+        "name": "Gemma",
+        "token": "enter-token-here",
+        "baseURL": "https://router.huggingface.co/v1",
+        "MODEL": "google/gemma-2-2b-it",
+        "type": "executor",
+        "promptFile": "config/executor-prompt.txt"
+      }
+    ]
+  }
