@@ -137,9 +137,11 @@ async function processRequest(context, prompt) {
     } else if (plannerResult.intent === 'action') {
       // Delegate to Task B
       Logger.info('[processRequest] Intent: action - delegating to Task B');
-      Logger.debug('[processRequest] Action details:', plannerResult.action);
       
-      if (!plannerResult.action) {
+      const actions = plannerResult.actions || (plannerResult.action ? [plannerResult.action] : []);
+      Logger.debug('[processRequest] Actions to execute:', actions);
+      
+      if (actions.length === 0) {
         Logger.error('[processRequest] Action intent but no action details provided');
         return {
           type: 'action_result',
@@ -148,15 +150,33 @@ async function processRequest(context, prompt) {
         };
       }
       
-      // Execute action via Task B
-      Logger.info('[processRequest] Calling delegateToTaskB...');
-      const actionResult = await delegateToTaskB(plannerResult.action);
-      Logger.info('[processRequest] Task B result:', actionResult);
+      // Execute actions sequentially
+      let lastResult = { success: true, message: 'No actions executed' };
+      const results = [];
+      
+      for (const [index, action] of actions.entries()) {
+        Logger.info(`[processRequest] Executing action ${index + 1}/${actions.length}`);
+        
+        try {
+            const result = await delegateToTaskB(action);
+            results.push(result);
+            lastResult = result;
+            
+            if (!result.success) {
+                Logger.warn(`[processRequest] Action ${index + 1} failed, stopping execution sequence.`);
+                break;
+            }
+        } catch (error) {
+            Logger.error(`[processRequest] Error executing action ${index + 1}:`, error);
+            lastResult = { success: false, message: `Error executing action ${index + 1}: ${error.message}` };
+            break;
+        }
+      }
       
       return {
         type: 'action_result',
-        message: actionResult.message || 'Action completed',
-        success: actionResult.success || false
+        message: lastResult.message || `Completed ${results.length} actions.`,
+        success: lastResult.success
       };
     } else {
       // Unknown intent

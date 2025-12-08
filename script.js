@@ -47,15 +47,15 @@ async function getPageContext() {
         // Clone the body to extract text without modifying the actual DOM
         const clone = document.body.cloneNode(true);
         
-        // Remove script, style, and noscript elements from the clone (not needed for text extraction)
-        const scripts = clone.querySelectorAll("script, style, noscript");
+        // Remove script, style, noscript, iframe, and svg elements from the clone
+        const scripts = clone.querySelectorAll("script, style, noscript, iframe, svg");
         scripts.forEach((el) => el.remove());
 
         // Extract visible text content, normalize whitespace (no character limit)
         const text = clone.innerText.replace(/\s+/g, " ").trim();
 
-        // Get the full HTML structure for action execution (selectors, element identification)
-        const html = document.body.outerHTML;
+        // Get the full HTML structure from the cleaned clone
+        const html = clone.outerHTML;
 
         // Return comprehensive page context object
         return {

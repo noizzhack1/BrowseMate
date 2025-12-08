@@ -272,7 +272,9 @@ User Request: ${userPrompt}
 
 Respond with a JSON object in this exact format:
 - If it's a question: {"intent": "question", "answer": "your answer here"}
-- If it's an action: {"intent": "action", "action": {"type": "click|fill|scroll|select|check|hover|submit", "target": "description of element", "value": "optional value for fill/select"}}
+- If it's an action: {"intent": "action", "actions": [{"type": "click|fill|scroll|select|check|hover|submit|keypress|focus", "target": "description of element", "value": "optional value"}]}
+
+If the user request requires multiple steps (e.g. "create an email draft" might involve clicking compose, then filling fields), provide ALL necessary steps in the "actions" array in order.
 
 Return ONLY valid JSON, no other text.`;
 
@@ -311,9 +313,14 @@ Return ONLY valid JSON, no other text.`;
         throw new Error('Invalid intent in LLM response');
       }
 
-      if (result.intent === 'action' && !result.action) {
-        console.error('[LLMClient.plannerCall] Action intent but no action object');
-        throw new Error('Action intent requires action object');
+      if (result.intent === 'action' && (!result.actions || !Array.isArray(result.actions))) {
+        // Fallback for single action format from older prompt versions or if LLM hallucinates
+        if (result.action) {
+          result.actions = [result.action];
+        } else {
+          console.error('[LLMClient.plannerCall] Action intent but no actions array');
+          throw new Error('Action intent requires actions array');
+        }
       }
 
       console.log('[LLMClient.plannerCall] Planner call successful, returning result');
@@ -348,7 +355,7 @@ Return ONLY valid JSON, no other text.`;
     }
 
     console.log('[LLMClient.actionsCall] Building action prompt...');
-    const actionPrompt = `You are a browser automation assistant. Determine the precise CSS selector and action parameters to perform the requested action on the page.
+    const actionPrompt = `You are a browser automation assistant. Determine the precise CSS selector (or XPath) and action parameters to perform the requested action on the page.
 
 Page HTML (first 10000 chars):
 ${context.substring(0, 10000)}
@@ -358,13 +365,13 @@ Action to perform:
 - Target: ${action.target}
 ${action.value ? `- Value: ${action.value}` : ''}
 
-Analyze the HTML and identify the unique CSS selector for the target element.
+Analyze the HTML and identify the unique CSS selector or XPath for the target element. Prefer CSS selectors, but use XPath if the element is hard to select by CSS (e.g. searching by text content).
 
 Return a JSON object in this exact format:
 {
-  "selector": "unique CSS selector for the target element",
-  "actionType": "click | fill | scroll | hover",
-  "value": "value to type (for fill actions) or 'bottom'/'top' (for scroll)",
+  "selector": "unique CSS selector or XPath for the target element",
+  "actionType": "click|fill|scroll|select|check|hover|submit|keypress|focus",
+  "value": "value to type (for fill/select/keypress) or 'bottom'/'top' (for scroll) or 'true'/'false' (for check)",
   "explanation": "brief explanation of what will be done"
 }
 

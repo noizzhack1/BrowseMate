@@ -63,22 +63,46 @@ async function executeSafeAction(params) {
         console.log(`[BrowseMate] Executing action: ${actionType} on ${selector}`);
         
         try {
-          const element = document.querySelector(selector);
-          if (!element && actionType !== 'scroll') {
+          // Helper to find element by CSS or XPath
+          const getElement = (sel) => {
+            if (!sel) return null;
+            if (sel.startsWith('//') || sel.startsWith('(')) {
+              // XPath
+              try {
+                const result = document.evaluate(sel, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+                return result.singleNodeValue;
+              } catch (e) {
+                console.warn(`Invalid XPath: ${sel}`, e);
+                return null;
+              }
+            } else {
+              // CSS
+              try {
+                return document.querySelector(sel);
+              } catch (e) {
+                console.warn(`Invalid CSS selector: ${sel}`, e);
+                return null;
+              }
+            }
+          };
+
+          const element = getElement(selector);
+          if (!element && actionType !== 'scroll' && actionType !== 'keypress') {
             throw new Error(`Element not found: ${selector}`);
           }
 
           // Helper to simulate events
-          const dispatchEvent = (el, eventType) => {
-            const event = new Event(eventType, { bubbles: true, cancelable: true });
+          const dispatchEvent = (el, eventType, options = {}) => {
+            const event = new Event(eventType, { bubbles: true, cancelable: true, ...options });
             el.dispatchEvent(event);
           };
 
           switch (actionType.toLowerCase()) {
             case 'click':
               if (element) {
+                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                // Slight delay to allow scroll
                 element.click();
-                // Sometimes click() isn't enough for SPAs, try sending events
                 dispatchEvent(element, 'mousedown');
                 dispatchEvent(element, 'mouseup');
               }
@@ -88,8 +112,47 @@ async function executeSafeAction(params) {
             case 'input':
             case 'type':
               if (element) {
-                element.value = value;
+                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                element.focus();
+                // Handle different input types
+                if (element.getAttribute('contenteditable') === 'true') {
+                  element.innerText = value;
+                } else {
+                  element.value = value;
+                }
                 dispatchEvent(element, 'input');
+                dispatchEvent(element, 'change');
+                element.blur();
+              }
+              break;
+
+            case 'select':
+              if (element) {
+                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                element.focus();
+                element.value = value;
+                dispatchEvent(element, 'change');
+                dispatchEvent(element, 'input');
+                element.blur();
+              }
+              break;
+
+            case 'check':
+            case 'checkbox':
+              if (element) {
+                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                // Determine boolean value from string/boolean input
+                const shouldCheck = String(value).toLowerCase() === 'true' || 
+                                   String(value).toLowerCase() === 'on' || 
+                                   String(value).toLowerCase() === 'checked' || 
+                                   value === true;
+                
+                if (element.checked !== shouldCheck) {
+                    element.click(); // Click usually triggers the right events for checkboxes
+                }
+                
+                // Force state just in case
+                element.checked = shouldCheck;
                 dispatchEvent(element, 'change');
               }
               break;
@@ -106,8 +169,47 @@ async function executeSafeAction(params) {
 
             case 'hover':
               if (element) {
+                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 dispatchEvent(element, 'mouseover');
                 dispatchEvent(element, 'mouseenter');
+                dispatchEvent(element, 'mousemove');
+              }
+              break;
+
+            case 'submit':
+              if (element) {
+                if (element.tagName === 'FORM') {
+                    element.submit();
+                } else if (element.form) {
+                    element.form.submit();
+                } else {
+                    // Try clicking as fallback
+                    element.click();
+                }
+              }
+              break;
+
+            case 'keypress':
+              const target = element || document.activeElement || document.body;
+              target.focus();
+              const key = value; // e.g., 'Enter', 'Escape'
+              const keyOptions = {
+                  key: key,
+                  code: key,
+                  bubbles: true,
+                  cancelable: true,
+                  view: window
+              };
+              target.dispatchEvent(new KeyboardEvent('keydown', keyOptions));
+              target.dispatchEvent(new KeyboardEvent('keypress', keyOptions));
+              target.dispatchEvent(new KeyboardEvent('keyup', keyOptions));
+              break;
+
+            case 'focus':
+              if (element) {
+                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                element.focus();
+                dispatchEvent(element, 'focus');
               }
               break;
 
@@ -194,14 +296,14 @@ async function executeAction(action) {
           target: { tabId: tab.id },
           func: () => {
             const clone = document.body.cloneNode(true);
-            const scripts = clone.querySelectorAll("script, style, noscript");
+            const scripts = clone.querySelectorAll("script, style, noscript, iframe, svg");
             scripts.forEach((el) => el.remove());
             const text = clone.innerText.replace(/\s+/g, " ").trim();
             return {
               url: window.location.href,
               title: document.title,
               text: text,
-              html: document.body.outerHTML
+              html: clone.outerHTML
             };
           }
         });
@@ -276,7 +378,12 @@ async function executeAction(action) {
         if (tab && tab.id) {
           const results = await chrome.scripting.executeScript({
             target: { tabId: tab.id },
-            func: () => document.body.outerHTML
+            func: () => {
+              const clone = document.body.cloneNode(true);
+              const scripts = clone.querySelectorAll("script, style, noscript, iframe, svg");
+              scripts.forEach((el) => el.remove());
+              return clone.outerHTML;
+            }
           });
           htmlAfter = results && results[0] ? results[0].result : null;
         }
