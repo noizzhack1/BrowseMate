@@ -134,12 +134,33 @@ async function loadSettings() {
 async function saveSettings(event) {
   event.preventDefault();
 
+  const providerRadios = Array.from(document.querySelectorAll('input[name=\"provider\"]'));
+  const checkedProvider = providerRadios.find(r => r.checked) || null;
+
+  const localName = document.getElementById('localName').value.trim();
+  const localBaseUrl = document.getElementById('localBaseUrl').value.trim();
+  const localModel = document.getElementById('localModel').value.trim();
+
+  // If a local model is configured, treat it as the active provider,
+  // regardless of which radio was previously selected.
+  const hasLocalConfig = !!(localBaseUrl && localModel);
+  const providerType = hasLocalConfig
+    ? 'local'
+    : (checkedProvider && checkedProvider.dataset.provider === 'local' ? 'local' : 'config');
+  const hfModel = hasLocalConfig
+    ? 'LOCAL'
+    : (checkedProvider ? checkedProvider.value : '');
+
   const settings = {
     hfToken: document.getElementById('hfToken').value.trim(),
     plannerModel: plannerSelect ? plannerSelect.value : '',
     executorModel: executorSelect ? executorSelect.value : '',
-    maxTokens: parseInt(document.getElementById('maxTokens').value, 10),
-    temperature: parseFloat(document.getElementById('temperature').value)
+    maxTokens: parseInt(document.getElementById('maxTokens').value),
+    temperature: parseFloat(document.getElementById('temperature').value),
+    providerType,
+    localName,
+    localBaseUrl,
+    localModel
   };
 
   // Validate token
@@ -162,6 +183,8 @@ async function saveSettings(event) {
     }
 
     showStatus('Settings saved successfully!', 'success');
+    // Rebuild the models list so the local model appears as a provider if configured
+    await loadSettings();
   } catch (error) {
     showStatus('Error saving settings: ' + error.message, 'error');
   }
