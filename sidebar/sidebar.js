@@ -1,8 +1,8 @@
 // BrowseMate Chat - simple in-panel chat UI with Task A orchestrator integration
 // Import Task A orchestrator for processing user requests
-import { processRequest } from './src/taskA/index.js';
+import { processRequest } from '../lib/task-planner.js';
 // Import LLMClient for backward compatibility and settings
-import { LLMClient } from './src/llm/LLMClient.js';
+import { LLMClient } from '../lib/llm-client.js';
 
 // =========================
 // DOM references
@@ -373,7 +373,7 @@ function toggleChatPanel() {
  * Open settings page in a new tab
  */
 function openSettings() {
-  const settingsUrl = chrome.runtime.getURL('settings.html');
+  const settingsUrl = chrome.runtime.getURL('settings/settings.html');
   chrome.tabs.create({ url: settingsUrl }).catch((error) => {
     console.error('Error opening settings:', error);
     // Fallback: try to open in current window
