@@ -369,9 +369,6 @@ function toggleChatPanel() {
   chatToggleBtn.title = isCollapsed ? "Show chat" : "Hide chat";
 }
 
-// Track the last active tab before Settings was opened so we can restore focus
-let lastActiveTabId = null;
-
 /**
  * Toggle the Settings page as a separate tab.
  * If a Settings tab is already open, close it; otherwise open it.
@@ -380,26 +377,12 @@ async function toggleSettings() {
   const settingsUrl = chrome.runtime.getURL('settings/settings.html');
   try {
     // Look for any existing Settings tabs
-    const tabs = await chrome.tabs.query({ url: settingsUrl });
+    const tabs = await chrome.tabs.query({ url: `${settingsUrl}*` });
 
     if (tabs && tabs.length > 0) {
-      const idsToClose = tabs
-        .map((t) => t.id)
-        .filter((id) => typeof id === 'number');
-      if (idsToClose.length > 0) {
-        await chrome.tabs.remove(idsToClose);
-      }
-
-      // After closing Settings, restore focus to the original tab if we tracked one
-      try {
-        const stored = await chrome.storage.session.get('browsemate_last_active_tab');
-        const targetId = lastActiveTabId || stored.browsemate_last_active_tab;
-        if (typeof targetId === 'number') {
-          await chrome.tabs.update(targetId, { active: true });
-        }
-      } catch (restoreError) {
-        console.warn('Error restoring original tab focus after closing Settings:', restoreError);
-      }
+      // Delegate closing & focus restoration to the background script so that
+      // both the Settings icon and the in-page Back link use identical logic.
+      chrome.runtime.sendMessage({ type: 'BROWSEMATE_CLOSE_SETTINGS' });
       return;
     }
 
@@ -407,14 +390,28 @@ async function toggleSettings() {
     try {
       const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (activeTab && typeof activeTab.id === 'number') {
-        lastActiveTabId = activeTab.id;
         await chrome.storage.session.set({ browsemate_last_active_tab: activeTab.id });
       }
     } catch (activeErr) {
       console.warn('Error capturing last active tab before opening Settings:', activeErr);
     }
 
-    await chrome.tabs.create({ url: settingsUrl });
+    // Pass the origin tab ID via query string so this particular Settings instance
+    // always knows which tab to return focus to when "Back" is clicked.
+    let urlWithOrigin = settingsUrl;
+    try {
+      const stored = await chrome.storage.session.get('browsemate_last_active_tab');
+      if (typeof stored.browsemate_last_active_tab === 'number') {
+        const originId = stored.browsemate_last_active_tab;
+        const u = new URL(settingsUrl);
+        u.searchParams.set('originTabId', String(originId));
+        urlWithOrigin = u.toString();
+      }
+    } catch (err) {
+      console.warn('Error attaching originTabId to settings URL:', err);
+    }
+
+    await chrome.tabs.create({ url: urlWithOrigin });
   } catch (error) {
     console.error('Error toggling settings:', error);
     // Fallback: try to open in current window
