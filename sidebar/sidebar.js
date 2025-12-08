@@ -15,6 +15,8 @@ const chatFormEl = document.getElementById("chatForm");
 /** @type {HTMLTextAreaElement | null} */
 const chatInputEl = document.getElementById("chatInput");
 /** @type {HTMLButtonElement | null} */
+const newChatBtn = document.getElementById("newChatBtn");
+/** @type {HTMLButtonElement | null} */
 const chatToggleBtn = document.getElementById("chatToggle");
 /** @type {HTMLButtonElement | null} */
 const settingsBtn = document.getElementById("settingsBtn");
@@ -87,6 +89,12 @@ async function setPageFrozen(freeze) {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab || !tab.id) return;
+
+    // Skip freezing for extension pages (chrome-extension:// URLs)
+    // Chrome doesn't allow script injection into extension pages
+    if (tab.url && tab.url.startsWith('chrome-extension://')) {
+      return;
+    }
 
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
@@ -374,15 +382,78 @@ function toggleChatPanel() {
 }
 
 /**
- * Open settings page in a new tab
+ * Start a brand-new chat session:
+ * - Clear all existing messages
+ * - Reset the input field
+ * - Show the initial welcome message again
  */
-function openSettings() {
+function startNewChat() {
+  if (chatMessagesEl) {
+    chatMessagesEl.innerHTML = "";
+  }
+  if (chatInputEl) {
+    chatInputEl.value = "";
+    autoResizeTextArea(chatInputEl);
+  }
+
+  appendMessage(
+    "assistant",
+    "Hi, I’m BrowseMate Chat living in your sidebar. Type a message below to start a conversation."
+  );
+}
+
+/**
+ * Toggle the Settings page as a separate tab.
+ * If a Settings tab is already open, close it; otherwise open it.
+ */
+async function toggleSettings() {
   const settingsUrl = chrome.runtime.getURL('settings/settings.html');
-  chrome.tabs.create({ url: settingsUrl }).catch((error) => {
-    console.error('Error opening settings:', error);
+  try {
+    // Look for any existing Settings tabs
+    const tabs = await chrome.tabs.query({ url: `${settingsUrl}*` });
+
+    if (tabs && tabs.length > 0) {
+      // Delegate closing & focus restoration to the background script so that
+      // both the Settings icon and the in-page Back link use identical logic.
+      chrome.runtime.sendMessage({ type: 'BROWSEMATE_CLOSE_SETTINGS' });
+      return;
+    }
+
+    // No existing Settings tab, remember the currently active tab then open Settings
+    try {
+      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (activeTab && typeof activeTab.id === 'number') {
+        await chrome.storage.session.set({ browsemate_last_active_tab: activeTab.id });
+      }
+    } catch (activeErr) {
+      console.warn('Error capturing last active tab before opening Settings:', activeErr);
+    }
+
+    // Pass the origin tab ID via query string so this particular Settings instance
+    // always knows which tab to return focus to when "Back" is clicked.
+    let urlWithOrigin = settingsUrl;
+    try {
+      const stored = await chrome.storage.session.get('browsemate_last_active_tab');
+      if (typeof stored.browsemate_last_active_tab === 'number') {
+        const originId = stored.browsemate_last_active_tab;
+        const u = new URL(settingsUrl);
+        u.searchParams.set('originTabId', String(originId));
+        urlWithOrigin = u.toString();
+      }
+    } catch (err) {
+      console.warn('Error attaching originTabId to settings URL:', err);
+    }
+
+    await chrome.tabs.create({ url: urlWithOrigin });
+  } catch (error) {
+    console.error('Error toggling settings:', error);
     // Fallback: try to open in current window
-    window.open(settingsUrl, '_blank');
-  });
+    try {
+      window.open(settingsUrl, '_blank');
+    } catch (_) {
+      // ignore
+    }
+  }
 }
 
 // =========================
@@ -421,8 +492,12 @@ function initChat() {
     chatToggleBtn.addEventListener("click", toggleChatPanel);
   }
 
+  if (newChatBtn) {
+    newChatBtn.addEventListener("click", startNewChat);
+  }
+
   if (settingsBtn) {
-    settingsBtn.addEventListener("click", openSettings);
+    settingsBtn.addEventListener("click", toggleSettings);
   }
 }
 
@@ -431,4 +506,3 @@ if (document.readyState === "loading") {
 } else {
   initChat();
 }
-
