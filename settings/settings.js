@@ -6,6 +6,7 @@ const llmClient = window.llmClient;
 const settingsForm = document.getElementById('settingsForm');
 const statusMessage = document.getElementById('statusMessage');
 const testBtn = document.getElementById('testBtn');
+const backToSiteBtn = document.getElementById('backToSiteBtn');
 
 // Default settings
 const DEFAULT_SETTINGS = {
@@ -307,6 +308,26 @@ async function handleAddModelSave() {
   }
 }
 
+// Close the Settings tab and return to the original site
+async function handleBackToSite() {
+  try {
+    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (activeTab && activeTab.id) {
+      await chrome.tabs.remove(activeTab.id);
+      return;
+    }
+  } catch (error) {
+    console.error('Error closing settings tab:', error);
+  }
+
+  // Fallback: try closing the window if running in a popup-like context
+  try {
+    window.close();
+  } catch (_) {
+    // ignore
+  }
+}
+
 // Event listeners
 settingsForm.addEventListener('submit', saveSettings);
 testBtn.addEventListener('click', testConnection);
@@ -327,6 +348,10 @@ if (addModelCancelBtn && newModelForm) {
     resetNewModelForm();
     newModelForm.style.display = 'none';
   });
+}
+
+if (backToSiteBtn) {
+  backToSiteBtn.addEventListener('click', handleBackToSite);
 }
 
 // Load settings on page load

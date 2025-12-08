@@ -370,15 +370,36 @@ function toggleChatPanel() {
 }
 
 /**
- * Open settings page in a new tab
+ * Toggle the Settings page as a separate tab.
+ * If a Settings tab is already open, close it; otherwise open it.
  */
-function openSettings() {
+async function toggleSettings() {
   const settingsUrl = chrome.runtime.getURL('settings/settings.html');
-  chrome.tabs.create({ url: settingsUrl }).catch((error) => {
-    console.error('Error opening settings:', error);
+  try {
+    // Look for any existing Settings tabs
+    const tabs = await chrome.tabs.query({ url: settingsUrl });
+
+    if (tabs && tabs.length > 0) {
+      const idsToClose = tabs
+        .map((t) => t.id)
+        .filter((id) => typeof id === 'number');
+      if (idsToClose.length > 0) {
+        await chrome.tabs.remove(idsToClose);
+      }
+      return;
+    }
+
+    // No existing Settings tab, open a new one
+    await chrome.tabs.create({ url: settingsUrl });
+  } catch (error) {
+    console.error('Error toggling settings:', error);
     // Fallback: try to open in current window
-    window.open(settingsUrl, '_blank');
-  });
+    try {
+      window.open(settingsUrl, '_blank');
+    } catch (_) {
+      // ignore
+    }
+  }
 }
 
 // =========================
@@ -418,7 +439,7 @@ function initChat() {
   }
 
   if (settingsBtn) {
-    settingsBtn.addEventListener("click", openSettings);
+    settingsBtn.addEventListener("click", toggleSettings);
   }
 }
 
@@ -427,4 +448,3 @@ if (document.readyState === "loading") {
 } else {
   initChat();
 }
-
