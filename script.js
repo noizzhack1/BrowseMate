@@ -1,4 +1,8 @@
-// BrowseMate Chat - simple in-panel chat UI (no external API calls)
+// BrowseMate Chat - simple in-panel chat UI with Task A orchestrator integration
+// Import Task A orchestrator for processing user requests
+import { processRequest } from './src/taskA/index.js';
+// Import LLMClient for backward compatibility and settings
+import { LLMClient } from './src/llm/LLMClient.js';
 
 // =========================
 // DOM references
@@ -24,37 +28,53 @@ const sidebarRootEl = document.querySelector(".sidebar-root");
 // =========================
 
 /**
- * Get the current page context (URL, title, and visible text)
- * @returns {Promise<{url: string, title: string, text: string}>}
+ * Get the current page context (URL, title, visible text, and HTML structure)
+ * @returns {Promise<{url: string, title: string, text: string, html: string}>}
  */
 async function getPageContext() {
+  // Query the active tab in the current window
   try {
+    // Get reference to the currently active tab
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab || !tab.id) return { url: "", title: "", text: "" };
+    
+    // Return empty context if no valid tab is found
+    if (!tab || !tab.id) return { url: "", title: "", text: "", html: "" };
 
+    // Execute script in the context of the active tab to extract page information
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: () => {
+        // Clone the body to extract text without modifying the actual DOM
         const clone = document.body.cloneNode(true);
+        
+        // Remove script, style, and noscript elements from the clone (not needed for text extraction)
         const scripts = clone.querySelectorAll("script, style, noscript");
         scripts.forEach((el) => el.remove());
 
-        const text = clone.innerText.replace(/\s+/g, " ").trim().slice(0, 3000);
+        // Extract visible text content, normalize whitespace (no character limit)
+        const text = clone.innerText.replace(/\s+/g, " ").trim();
 
+        // Get the full HTML structure for action execution (selectors, element identification)
+        const html = document.body.outerHTML;
+
+        // Return comprehensive page context object
         return {
-          url: window.location.href,
-          title: document.title,
-          text
+          url: window.location.href,   // Current page URL
+          title: document.title,        // Page title
+          text,                         // Visible text content (cleaned)
+          html                          // Full HTML structure for Task B actions
         };
       }
     });
 
+    // Return the result if valid, otherwise return empty context
     return results && results[0] && results[0].result
       ? results[0].result
-      : { url: "", title: "", text: "" };
+      : { url: "", title: "", text: "", html: "" };
   } catch (error) {
+    // Log error and return empty context on failure
     console.error("Error getting page context:", error);
-    return { url: "", title: "", text: "" };
+    return { url: "", title: "", text: "", html: "" };
   }
 }
 
@@ -159,15 +179,26 @@ function appendMessage(role, text) {
 }
 
 /**
+<<<<<<< HEAD
  * Call the configured LLM with the user's message.
  * Uses Hugging Face router for \"config\" providers and a custom
  * OpenAI-compatible endpoint for the \"local\" provider.
+=======
+ * Call Task A orchestrator to process user request
+ * This replaces the direct LLM call with the full Task A + Task B flow
+>>>>>>> origin/main
  * @param {string} userText
  * @param {boolean} includeContext
+ * @param {Function} onProgress - Optional callback for progress updates
  * @returns {Promise<string>}
  */
-async function callHuggingFaceAPI(userText, includeContext = false) {
+async function callLLMAPI(userText, includeContext = false, onProgress = null) {
+  console.log('[callLLMAPI] Starting LLM API call');
+  console.log('[callLLMAPI] User text:', userText);
+  console.log('[callLLMAPI] Include context:', includeContext);
+  
   try {
+<<<<<<< HEAD
     // Load settings from storage
     const result = await chrome.storage.sync.get('browsemate_settings');
     const settings = result.browsemate_settings;
@@ -257,14 +288,75 @@ User Question: ${userText}`;
     // Handle OpenAI-compatible response format
     if (data.choices && data.choices.length > 0) {
       return data.choices[0].message.content || "No response generated.";
+=======
+    // Get page context if requested
+    let context = null;
+    if (includeContext) {
+      console.log('[callLLMAPI] Getting page context...');
+      context = await getPageContext();
+      console.log('[callLLMAPI] Context retrieved:', {
+        url: context.url,
+        title: context.title,
+        textLength: context.text?.length || 0,
+        htmlLength: context.html?.length || 0
+      });
+>>>>>>> origin/main
     } else {
-      return JSON.stringify(data);
+      console.log('[callLLMAPI] Context not requested, skipping');
+    }
+
+    // Use Task A orchestrator to process the request
+    // Task A will determine if it's a question or action and route accordingly
+    console.log('[callLLMAPI] Calling processRequest...');
+    const result = await processRequest(context, userText, onProgress);
+    console.log('[callLLMAPI] ProcessRequest completed');
+    console.log('[callLLMAPI] Result type:', result.type);
+    console.log('[callLLMAPI] Result:', result);
+
+    // Format the response based on result type
+    if (result.type === 'answer') {
+      // Direct answer to a question
+      console.log('[callLLMAPI] Returning answer:', result.message);
+      return result.message;
+    } else if (result.type === 'action_result') {
+      // Action was executed
+      const status = result.success ? '✓' : '✗';
+      const formattedMessage = `${status} ${result.message}`;
+      console.log('[callLLMAPI] Returning action result:', formattedMessage);
+      return formattedMessage;
+    } else {
+      // Unknown type
+      console.warn('[callLLMAPI] Unknown result type:', result.type);
+      return result.message || 'Unknown response type';
     }
 
   } catch (error) {
+<<<<<<< HEAD
     console.error('LLM API Error:', error);
     return `Error: ${error.message}\n\nPlease check your model settings and try again.`;
+=======
+    console.error('[callLLMAPI] Task A processing error:', error);
+    console.error('[callLLMAPI] Error message:', error.message);
+    console.error('[callLLMAPI] Error stack:', error.stack);
+
+    if (error.message && error.message.includes('token')) {
+      return "Please configure your API token in Settings (click ⚙️ button).";
+    }
+
+    return `Error: ${error.message || 'Unknown error'}\n\nPlease check your settings and try again.`;
+>>>>>>> origin/main
   }
+}
+
+// Create LLMClient singleton instance for backward compatibility
+// (in case other parts of the code still reference it)
+const llmClient = new LLMClient();
+
+// Make getPageContext available globally for Task B executor
+// (Task B executor uses it internally)
+if (typeof window !== 'undefined') {
+  window.getPageContext = getPageContext;
+  window.llmClient = llmClient;
 }
 
 // =========================
@@ -299,20 +391,65 @@ async function handleChatSubmit(event) {
   appendMessage("assistant", "Thinking...");
 
   let reply;
+  let progressMessageEl = null;
+
   try {
-    reply = await callHuggingFaceAPI(value, includeContext);
+    // Create a callback for progress updates
+    const onProgress = (progress) => {
+      // Remove "Thinking..." message if still there
+      if (chatMessagesEl && chatMessagesEl.lastChild && chatMessagesEl.lastChild.textContent === "Thinking...") {
+        chatMessagesEl.removeChild(chatMessagesEl.lastChild);
+      }
+
+      // Create or update progress message
+      if (!progressMessageEl) {
+        const container = document.createElement("div");
+        container.className = "message message--assistant";
+        const body = document.createElement("div");
+        body.className = "message__body";
+        container.appendChild(body);
+        chatMessagesEl.appendChild(container);
+        progressMessageEl = body;
+      }
+
+      // Format progress update
+      const statusIcon = progress.status === 'completed' ? '✓' :
+                        progress.status === 'failed' ? '✗' : '⋯';
+      const stepText = `Step ${progress.step}/${progress.total}: ${progress.description} ${statusIcon}`;
+
+      // Update or append to progress message
+      const lines = progressMessageEl.textContent.split('\n').filter(l => l.trim());
+
+      if (progress.status === 'executing') {
+        // Add new step
+        lines.push(stepText);
+      } else {
+        // Update last line with completion status
+        lines[lines.length - 1] = stepText;
+      }
+
+      progressMessageEl.textContent = lines.join('\n');
+      chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+    };
+
+    reply = await callLLMAPI(value, includeContext, onProgress);
   } finally {
     // Always unfreeze, even if the API errors
     await setPageFrozen(false);
   }
 
-  // Remove the "Thinking..." message
-  if (chatMessagesEl && chatMessagesEl.lastChild) {
-    chatMessagesEl.removeChild(chatMessagesEl.lastChild);
+  // If we only showed "Thinking..." and no progress, remove it
+  if (!progressMessageEl && chatMessagesEl && chatMessagesEl.lastChild) {
+    const lastMsg = chatMessagesEl.lastChild.querySelector('.message__body');
+    if (lastMsg && lastMsg.textContent === "Thinking...") {
+      chatMessagesEl.removeChild(chatMessagesEl.lastChild);
+    }
   }
 
-  // Show actual response
-  appendMessage("assistant", reply);
+  // Show actual response (only if it's not empty and different from progress)
+  if (reply && reply.trim()) {
+    appendMessage("assistant", reply);
+  }
 }
 
 /**
