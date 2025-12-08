@@ -369,6 +369,9 @@ function toggleChatPanel() {
   chatToggleBtn.title = isCollapsed ? "Show chat" : "Hide chat";
 }
 
+// Track the last active tab before Settings was opened so we can restore focus
+let lastActiveTabId = null;
+
 /**
  * Toggle the Settings page as a separate tab.
  * If a Settings tab is already open, close it; otherwise open it.
@@ -386,10 +389,31 @@ async function toggleSettings() {
       if (idsToClose.length > 0) {
         await chrome.tabs.remove(idsToClose);
       }
+
+      // After closing Settings, restore focus to the original tab if we tracked one
+      try {
+        const stored = await chrome.storage.session.get('browsemate_last_active_tab');
+        const targetId = lastActiveTabId || stored.browsemate_last_active_tab;
+        if (typeof targetId === 'number') {
+          await chrome.tabs.update(targetId, { active: true });
+        }
+      } catch (restoreError) {
+        console.warn('Error restoring original tab focus after closing Settings:', restoreError);
+      }
       return;
     }
 
-    // No existing Settings tab, open a new one
+    // No existing Settings tab, remember the currently active tab then open Settings
+    try {
+      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (activeTab && typeof activeTab.id === 'number') {
+        lastActiveTabId = activeTab.id;
+        await chrome.storage.session.set({ browsemate_last_active_tab: activeTab.id });
+      }
+    } catch (activeErr) {
+      console.warn('Error capturing last active tab before opening Settings:', activeErr);
+    }
+
     await chrome.tabs.create({ url: settingsUrl });
   } catch (error) {
     console.error('Error toggling settings:', error);

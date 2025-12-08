@@ -308,13 +308,44 @@ async function handleAddModelSave() {
   }
 }
 
-// Close the Settings tab and return to the original site
+// Close the Settings tab and return focus to the original site tab
 async function handleBackToSite() {
   try {
+    const settingsUrl = chrome.runtime.getURL('settings/settings.html');
+
+    // Identify this Settings tab
+    const [settingsTab] = await chrome.tabs.query({ active: true, currentWindow: true, url: settingsUrl });
+
+    // Try to retrieve the original tab that was active before Settings opened
+    let originalTabId = null;
+    try {
+      const stored = await chrome.storage.session.get('browsemate_last_active_tab');
+      if (typeof stored.browsemate_last_active_tab === 'number') {
+        originalTabId = stored.browsemate_last_active_tab;
+      }
+    } catch (e) {
+      console.warn('Error reading last active tab from session storage:', e);
+    }
+
+    // Close the Settings tab if we found it
+    if (settingsTab && typeof settingsTab.id === 'number') {
+      await chrome.tabs.remove(settingsTab.id);
+    }
+
+    // Restore focus to the original tab if known
+    if (originalTabId !== null) {
+      try {
+        await chrome.tabs.update(originalTabId, { active: true });
+        return;
+      } catch (e) {
+        console.warn('Error restoring original tab focus from Settings:', e);
+      }
+    }
+
+    // Fallback: if we don't know the original tab, just ensure some tab is active
     const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (activeTab && activeTab.id) {
-      await chrome.tabs.remove(activeTab.id);
-      return;
+      await chrome.tabs.update(activeTab.id, { active: true });
     }
   } catch (error) {
     console.error('Error closing settings tab:', error);
