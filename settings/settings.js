@@ -52,6 +52,9 @@ async function loadSettings() {
     const result = await chrome.storage.sync.get('browsemate_settings');
     const settings = result.browsemate_settings || DEFAULT_SETTINGS;
 
+    // First populate model options from config so we can safely select a value
+    await populateModelsFromConfig(settings);
+
     // Populate form fields
     document.getElementById('hfToken').value = settings.hfToken || '';
     document.getElementById('selectedLLM').value = settings.selectedLLM || (llms[0]?.name || '');
@@ -68,11 +71,32 @@ async function loadSettings() {
 async function saveSettings(event) {
   event.preventDefault();
 
+  const providerRadios = Array.from(document.querySelectorAll('input[name=\"provider\"]'));
+  const checkedProvider = providerRadios.find(r => r.checked) || null;
+
+  const localName = document.getElementById('localName').value.trim();
+  const localBaseUrl = document.getElementById('localBaseUrl').value.trim();
+  const localModel = document.getElementById('localModel').value.trim();
+
+  // If a local model is configured, treat it as the active provider,
+  // regardless of which radio was previously selected.
+  const hasLocalConfig = !!(localBaseUrl && localModel);
+  const providerType = hasLocalConfig
+    ? 'local'
+    : (checkedProvider && checkedProvider.dataset.provider === 'local' ? 'local' : 'config');
+  const hfModel = hasLocalConfig
+    ? 'LOCAL'
+    : (checkedProvider ? checkedProvider.value : '');
+
   const settings = {
     hfToken: document.getElementById('hfToken').value.trim(),
     selectedLLM: document.getElementById('selectedLLM').value,
     maxTokens: parseInt(document.getElementById('maxTokens').value),
-    temperature: parseFloat(document.getElementById('temperature').value)
+    temperature: parseFloat(document.getElementById('temperature').value),
+    providerType,
+    localName,
+    localBaseUrl,
+    localModel
   };
 
   // Validate token
@@ -96,6 +120,8 @@ async function saveSettings(event) {
     }
 
     showStatus('Settings saved successfully!', 'success');
+    // Rebuild the models list so the local model appears as a provider if configured
+    await loadSettings();
   } catch (error) {
     showStatus('Error saving settings: ' + error.message, 'error');
   }
@@ -173,6 +199,16 @@ function showStatus(message, type) {
 // Event listeners
 settingsForm.addEventListener('submit', saveSettings);
 testBtn.addEventListener('click', testConnection);
+
+// Toggle local model form
+const addLocalModelBtn = document.getElementById('addLocalModelBtn');
+const localModelFields = document.getElementById('localModelFields');
+if (addLocalModelBtn && localModelFields) {
+  addLocalModelBtn.addEventListener('click', () => {
+    const isVisible = localModelFields.style.display === 'block';
+    localModelFields.style.display = isVisible ? 'none' : 'block';
+  });
+}
 
 // Load settings on page load
 loadSettings();
