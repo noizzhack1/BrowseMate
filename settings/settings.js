@@ -8,6 +8,9 @@ const statusMessage = document.getElementById('statusMessage');
 const testBtn = document.getElementById('testBtn');
 const backToSiteBtn = document.getElementById('backToSiteBtn');
 
+// Store timeout ID for clearing auto-hide
+let statusTimeoutId = null;
+
 // Default settings
 const DEFAULT_SETTINGS = {
   hfToken: '',
@@ -137,9 +140,9 @@ async function saveSettings(event) {
   const providerRadios = Array.from(document.querySelectorAll('input[name=\"provider\"]'));
   const checkedProvider = providerRadios.find(r => r.checked) || null;
 
-  const localName = document.getElementById('localName').value.trim();
-  const localBaseUrl = document.getElementById('localBaseUrl').value.trim();
-  const localModel = document.getElementById('localModel').value.trim();
+  const localName = document.getElementById('newModelName').value.trim();
+  const localBaseUrl = document.getElementById('newModelBaseURL').value.trim();
+  const localModel = document.getElementById('newModelMODEL').value.trim();
 
   // If a local model is configured, treat it as the active provider,
   // regardless of which radio was previously selected.
@@ -150,7 +153,6 @@ async function saveSettings(event) {
   const hfModel = hasLocalConfig
     ? 'LOCAL'
     : (checkedProvider ? checkedProvider.value : '');
-
   const settings = {
     hfToken: document.getElementById('hfToken').value.trim(),
     plannerModel: plannerSelect ? plannerSelect.value : '',
@@ -174,19 +176,37 @@ async function saveSettings(event) {
     return;
   }
 
+  // Show saving notification
+  console.log('[saveSettings] Showing saving notification');
+  showStatus('Saving settings...', 'success');
+  
+  // Disable save button during save operation
+  const saveBtn = settingsForm.querySelector('button[type="submit"]');
+  const wasDisabled = saveBtn ? saveBtn.disabled : false;
+  if (saveBtn) saveBtn.disabled = true;
+
   try {
+    console.log('[saveSettings] Saving to chrome.storage...');
     await chrome.storage.sync.set({ [SETTINGS_KEY]: settings });
+    console.log('[saveSettings] Settings saved to storage');
 
     // Update the LLM client with new settings
     if (llmClient.isInitialized && llmClient.currentLLM) {
       llmClient.currentLLM.token = settings.hfToken;
     }
 
+    console.log('[saveSettings] Showing success notification');
     showStatus('Settings saved successfully!', 'success');
     // Rebuild the models list so the local model appears as a provider if configured
+    // Use a small delay to ensure the success message is visible before reloading
+    await new Promise(resolve => setTimeout(resolve, 100));
     await loadSettings();
   } catch (error) {
+    console.error('[saveSettings] Error saving settings:', error);
     showStatus('Error saving settings: ' + error.message, 'error');
+  } finally {
+    // Re-enable save button
+    if (saveBtn && !wasDisabled) saveBtn.disabled = false;
   }
 }
 
@@ -255,14 +275,41 @@ async function testConnection() {
  * Show status message
  */
 function showStatus(message, type) {
+  console.log('[showStatus] Called with:', { message, type, statusMessageExists: !!statusMessage });
+  
+  if (!statusMessage) {
+    console.error('[showStatus] Status message element not found');
+    return;
+  }
+
+  // Clear any existing timeout
+  if (statusTimeoutId) {
+    clearTimeout(statusTimeoutId);
+    statusTimeoutId = null;
+  }
+
   statusMessage.textContent = message;
   statusMessage.className = `status-message ${type}`;
   statusMessage.style.display = 'block';
+  
+  // Scroll the status message into view to ensure it's visible
+  statusMessage.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  
+  console.log('[showStatus] Status message updated:', {
+    textContent: statusMessage.textContent,
+    className: statusMessage.className,
+    display: statusMessage.style.display,
+    computedDisplay: window.getComputedStyle(statusMessage).display
+  });
 
   // Auto-hide success messages after 3 seconds
   if (type === 'success') {
-    setTimeout(() => {
-      statusMessage.style.display = 'none';
+    statusTimeoutId = setTimeout(() => {
+      if (statusMessage) {
+        statusMessage.style.display = 'none';
+        console.log('[showStatus] Auto-hiding success message');
+      }
+      statusTimeoutId = null;
     }, 3000);
   }
 }
@@ -381,6 +428,13 @@ if (addModelCancelBtn && newModelForm) {
 
 if (backToSiteBtn) {
   backToSiteBtn.addEventListener('click', handleBackToSite);
+}
+
+// Verify status message element exists on page load
+if (!statusMessage) {
+  console.error('[settings.js] Status message element not found on page load!');
+} else {
+  console.log('[settings.js] Status message element found:', statusMessage);
 }
 
 // Load settings on page load
