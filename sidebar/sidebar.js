@@ -226,6 +226,16 @@ async function callLLMAPI(userText, includeContext = false, onProgress = null) {
       const formattedMessage = `${status} ${result.message}`;
       console.log('[callLLMAPI] Returning action result:', formattedMessage);
       return formattedMessage;
+    } else if (result.type === 'execution') {
+      // Sequential execution completed - show task list
+      console.log('[callLLMAPI] Returning execution result with task list');
+      const header = result.message + '\n\n';
+      const taskList = result.taskList || 'No tasks to display';
+      return header + taskList;
+    } else if (result.type === 'plan') {
+      // Plan created (old format backward compatibility)
+      console.log('[callLLMAPI] Returning plan');
+      return result.message;
     } else {
       // Unknown type
       console.warn('[callLLMAPI] Unknown result type:', result.type);
