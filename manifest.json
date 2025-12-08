@@ -17,7 +17,8 @@
     "default_title": "BrowseMate Chat"
   },
   "background": {
-    "service_worker": "background/background.js"
+    "service_worker": "background/background.js",
+    "type": "module"
   },
   "side_panel": {
     "default_path": "sidebar/sidebar.html"

@@ -17,4 +17,5 @@
     - [ ]  Zoom
     - [ ]  Press Enter After fill search
     - [ ]  Upload file (?)
+    - [x]  Translate page
 - [ ]  Support for history fetch
