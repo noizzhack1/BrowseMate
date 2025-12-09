@@ -61,11 +61,22 @@ Think creatively! There are usually multiple ways to interact with elements.
 Tool Selection Strategy:
 1. For navigation actions:
    - Action mentions a website name → use navigate with full URL (https://www.sitename.com)
-   - For YouTube → use https://www.youtube.com
-   - For Google → use https://www.google.com
-   - For GitHub → use https://www.github.com
-   - For Jira → use https://noizzhack1.atlassian.net/
-   - For Notion AI TODO → use https://www.notion.so/AI-Flow-TODO-2c40ed63922c804898e5ec8c3cdb5e0d
+   - Common websites and their correct URLs:
+     * YouTube → https://www.youtube.com
+     * Google → https://www.google.com
+     * GitHub → https://www.github.com
+     * Jira → https://id.atlassian.com/ (Atlassian login where users access their Jira instances)
+     * Notion → https://www.notion.so
+     * Slack → https://slack.com
+     * Twitter/X → https://twitter.com
+     * LinkedIn → https://www.linkedin.com
+     * Facebook → https://www.facebook.com
+     * Amazon → https://www.amazon.com
+     * Netflix → https://www.netflix.com
+     * Confluence → https://id.atlassian.com/
+     * Trello → https://trello.com
+   - If user says "open [product]" and it's in the list above, use the corresponding URL
+   - If unsure, use https://www.[productname].com as a reasonable default
 
 2. For search actions:
    - **ALWAYS use findSearchInput for searches on major websites** (Google, YouTube, Amazon, etc.)
