@@ -378,11 +378,13 @@
           <input type="text" id="mcpName" placeholder="Server Name" />
         </div>
         <div class="form-group">
-          <label for="mcpType">Type</label>
+          <label for="mcpType">Transport Method</label>
           <select id="mcpType">
-            <option value="sse">HTTP (SSE)</option>
+            <option value="http">HTTP (Streamable-HTTP / POST)</option>
+            <option value="sse">SSE (Server-Sent Events / GET)</option>
             <option value="websocket">WebSocket</option>
           </select>
+          <small>Choose the transport protocol. Most FastMCP servers use HTTP (Streamable-HTTP).</small>
         </div>
         
         <div id="mcpConnectionFields">
