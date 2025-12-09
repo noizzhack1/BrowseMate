@@ -339,13 +339,13 @@ async function handleChatSubmit(event) {
   if (chatStopBtn) chatStopBtn.style.display = "inline-flex";
   if (chatSendBtn) chatSendBtn.style.display = "none";
 
-  // Freeze page and show loading indicator
-  await setPageFrozen(true);
+  // Show loading indicator (but don't freeze page yet - only freeze when actions start)
   appendMessage("assistant", "Thinking...");
 
   let reply;
   let progressMessageEl = null;
   let progressContainer = null;
+  let isPageFrozen = false; // Track if we've frozen the page
 
   try {
     // Create a callback for progress updates
@@ -353,6 +353,12 @@ async function handleChatSubmit(event) {
       // Check if request was aborted
       if (abortSignal.aborted) {
         return;
+      }
+
+      // Freeze page when actions start (first time onProgress is called)
+      if (!isPageFrozen) {
+        setPageFrozen(true);
+        isPageFrozen = true;
       }
 
       // Remove "Thinking..." message if still there
@@ -404,8 +410,10 @@ async function handleChatSubmit(event) {
       throw error;
     }
   } finally {
-    // Always unfreeze, even if the API errors
-    await setPageFrozen(false);
+    // Always unfreeze if we froze the page, even if the API errors
+    if (isPageFrozen) {
+      await setPageFrozen(false);
+    }
     
     // Reset request state
     isRequestInProgress = false;
