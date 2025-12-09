@@ -179,6 +179,217 @@ async function setPageFrozen(freeze) {
 // =========================
 
 /**
+ * Create copy and edit icons for a message (shown on hover, at the end of message)
+ * @param {HTMLElement} container - The message container element
+ * @param {HTMLElement} body - The message body element (for getting text)
+ * @param {string} role - The message role ("user" or "assistant")
+ * @param {string} originalText - The original message text (for editing, null for streaming messages)
+ * @returns {HTMLElement} The icons wrapper element
+ */
+function createMessageIcons(container, body, role, originalText = null) {
+  // Create wrapper for icons (copy and edit)
+  const iconsWrapper = document.createElement("div");
+  iconsWrapper.className = "message__icons";
+  
+  // Copy button
+  const copyBtn = document.createElement("button");
+  copyBtn.className = "message__icon message__icon--copy";
+  copyBtn.type = "button";
+  copyBtn.setAttribute("aria-label", "Copy message");
+  copyBtn.title = "Copy message";
+  
+  // Copy icon SVG
+  copyBtn.innerHTML = `
+    <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" width="14" height="14">
+      <path d="M5.5 3.5V1.5C5.5 1.22386 5.72386 1 6 1H12.5C12.7761 1 13 1.22386 13 1.5V8.5C13 8.77614 12.7761 9 12.5 9H10.5V11.5C10.5 11.7761 10.2761 12 10 12H3.5C3.22386 12 3 11.7761 3 11.5V4.5C3 4.22386 3.22386 4 3.5 4H5.5V3.5ZM6 2V4.5C6 4.77614 6.22386 5 6.5 5H10V8H12V2H6ZM4 5H9.5V11H4V5Z" fill-rule="evenodd" clip-rule="evenodd" fill="currentColor"/>
+    </svg>
+  `;
+  
+  // Create feedback (inline, doesn't shift layout)
+  const feedback = document.createElement("span");
+  feedback.className = "message__copy-feedback";
+  feedback.textContent = "Copied!";
+  
+  // Edit button (only for user messages)
+  let editBtn = null;
+  if (role === "user" && originalText !== null) {
+    editBtn = document.createElement("button");
+    editBtn.className = "message__icon message__icon--edit";
+    editBtn.type = "button";
+    editBtn.setAttribute("aria-label", "Edit message");
+    editBtn.title = "Edit message";
+    
+    // Edit icon SVG
+    editBtn.innerHTML = `
+      <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" width="14" height="14">
+        <path d="M11.013 1.427a1.75 1.75 0 012.474 0l1.086 1.086a1.75 1.75 0 010 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 01-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61zm1.414 1.06a.25.25 0 00-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 000-.354l-1.086-1.086zM11.189 6.25L9.75 4.81l-6.286 6.287a.25.25 0 00-.064.108l-.558 1.953 1.953-.558a.249.249 0 00.108-.064l6.286-6.286z" fill="currentColor"/>
+      </svg>
+    `;
+  }
+  
+  iconsWrapper.appendChild(copyBtn);
+  if (editBtn) {
+    iconsWrapper.appendChild(editBtn);
+  }
+  iconsWrapper.appendChild(feedback);
+  
+  // Copy functionality
+  copyBtn.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    
+    // Get text content (handle both textContent and innerHTML for streaming messages)
+    let textToCopy = '';
+    
+    // Try to get text content first (works for both plain text and HTML)
+    if (body.textContent) {
+      textToCopy = body.textContent;
+    } else if (body.innerText) {
+      textToCopy = body.innerText;
+    } else if (body.innerHTML) {
+      // For HTML content, extract text while preserving structure
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = body.innerHTML;
+      textToCopy = tempDiv.textContent || tempDiv.innerText || '';
+    }
+    
+    // Clean up extra whitespace but preserve line breaks
+    textToCopy = textToCopy.trim();
+    
+    if (!textToCopy) {
+      return; // Nothing to copy
+    }
+    
+    try {
+      await navigator.clipboard.writeText(textToCopy);
+      
+      // Show feedback
+      feedback.classList.add("show");
+      setTimeout(() => {
+        feedback.classList.remove("show");
+      }, 2000);
+    } catch (err) {
+      console.error('Failed to copy text:', err);
+      // Fallback for older browsers
+      const textArea = document.createElement("textarea");
+      textArea.value = textToCopy;
+      textArea.style.position = "fixed";
+      textArea.style.left = "-9999px";
+      textArea.style.top = "0";
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      try {
+        const successful = document.execCommand('copy');
+        if (successful) {
+          feedback.classList.add("show");
+          setTimeout(() => {
+            feedback.classList.remove("show");
+          }, 2000);
+        }
+      } catch (fallbackErr) {
+        console.error('Fallback copy failed:', fallbackErr);
+      }
+      document.body.removeChild(textArea);
+    }
+  });
+  
+  // Edit functionality (only for user messages)
+  if (editBtn && originalText !== null) {
+    editBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      
+      // Put the original text in the input field
+      if (chatInputEl) {
+        chatInputEl.value = originalText;
+        chatInputEl.focus();
+        autoResizeTextArea(chatInputEl);
+        // Scroll input into view
+        chatInputEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    });
+  }
+  
+  // Function to check if message has content
+  const hasContent = () => {
+    const text = body.textContent || body.innerText || '';
+    return text.trim().length > 0;
+  };
+  
+  // Find the message wrapper - it's the parent of the container
+  // Note: At the time createMessageIcons is called, container is already in messageWrapper
+  let messageWrapper = container.parentElement;
+  
+  // If parentElement doesn't have the class, try closest (for safety)
+  if (!messageWrapper || !messageWrapper.classList.contains('message-wrapper')) {
+    messageWrapper = container.closest('.message-wrapper');
+  }
+  
+  // Hide icons if message is empty
+  const updateVisibility = () => {
+    if (hasContent()) {
+      // Icons are shown via CSS hover, ensure they're in the layout
+      iconsWrapper.style.display = 'flex';
+      // CRITICAL: Remove any inline opacity - let CSS/JS hover handle it
+      iconsWrapper.style.removeProperty('opacity');
+      iconsWrapper.style.removeProperty('pointer-events');
+    } else {
+      // Hide completely if no content
+      iconsWrapper.style.display = 'none';
+    }
+  };
+  
+  // Add JavaScript hover handlers to ensure it works for both message types
+  // This provides a reliable fallback that works regardless of CSS specificity
+  if (messageWrapper && messageWrapper.classList.contains('message-wrapper')) {
+    // Mouse enter - show icons
+    const handleMouseEnter = () => {
+      if (hasContent() && iconsWrapper.style.display !== 'none') {
+        iconsWrapper.style.opacity = '1';
+        iconsWrapper.style.pointerEvents = 'auto';
+        iconsWrapper.style.visibility = 'visible';
+      }
+    };
+    
+    // Mouse leave - hide icons
+    const handleMouseLeave = () => {
+      iconsWrapper.style.opacity = '0';
+      iconsWrapper.style.pointerEvents = 'none';
+      // Keep visibility visible so element can still be hovered
+      iconsWrapper.style.visibility = 'visible';
+    };
+    
+    // Attach to wrapper (covers entire message area)
+    messageWrapper.addEventListener('mouseenter', handleMouseEnter);
+    messageWrapper.addEventListener('mouseleave', handleMouseLeave);
+    
+    // Also attach to the message bubble itself for extra reliability
+    // This ensures hover works even if wrapper hover doesn't trigger
+    container.addEventListener('mouseenter', handleMouseEnter);
+    container.addEventListener('mouseleave', handleMouseLeave);
+    
+    // Set initial hidden state
+    if (hasContent()) {
+      handleMouseLeave();
+    }
+  }
+  
+  // Initial visibility check
+  updateVisibility();
+  
+  // For streaming messages, check content periodically
+  if (body.innerHTML || body.textContent) {
+    const observer = new MutationObserver(() => {
+      updateVisibility();
+    });
+    observer.observe(body, { childList: true, subtree: true, characterData: true });
+  }
+  
+  return iconsWrapper;
+}
+
+/**
  * Append a chat message bubble to the messages area.
  * @param {"user" | "assistant"} role
  * @param {string} text
@@ -186,6 +397,11 @@ async function setPageFrozen(freeze) {
  */
 function appendMessage(role, text) {
   if (!chatMessagesEl) return null;
+  
+  // Create wrapper for message and copy icon (copy icon outside message border)
+  const messageWrapper = document.createElement("div");
+  messageWrapper.className = `message-wrapper message-wrapper--${role}`;
+  
   const container = document.createElement("div");
   container.className = `message message--${role}`;
 
@@ -194,7 +410,15 @@ function appendMessage(role, text) {
   body.textContent = text;
 
   container.appendChild(body);
-  chatMessagesEl.appendChild(container);
+  
+  // Add message to wrapper
+  messageWrapper.appendChild(container);
+  
+  // Add icons outside message border (at the end of message)
+  const iconsWrapper = createMessageIcons(container, body, role, text);
+  messageWrapper.appendChild(iconsWrapper);
+  
+  chatMessagesEl.appendChild(messageWrapper);
 
   // Auto-scroll to bottom
   chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
@@ -209,6 +433,11 @@ function appendMessage(role, text) {
  */
 function createStreamingMessage(role) {
   if (!chatMessagesEl) return null;
+  
+  // Create wrapper for message and copy icon (copy icon outside message border)
+  const messageWrapper = document.createElement("div");
+  messageWrapper.className = `message-wrapper message-wrapper--${role}`;
+  
   const container = document.createElement("div");
   container.className = `message message--${role}`;
 
@@ -217,7 +446,16 @@ function createStreamingMessage(role) {
   body.textContent = "";
 
   container.appendChild(body);
-  chatMessagesEl.appendChild(container);
+  
+  // Add message to wrapper
+  messageWrapper.appendChild(container);
+  
+  // Add icons outside message border (at the end of message)
+  // Note: For streaming messages, we don't have original text, so edit won't be available
+  const iconsWrapper = createMessageIcons(container, body, role, null);
+  messageWrapper.appendChild(iconsWrapper);
+  
+  chatMessagesEl.appendChild(messageWrapper);
 
   // Auto-scroll to bottom
   chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
@@ -531,12 +769,25 @@ async function handleChatSubmit(event) {
 
       // Create progress message if it doesn't exist
       if (!progressMessageEl) {
+        // Create wrapper for message and copy icon
+        const progressWrapper = document.createElement("div");
+        progressWrapper.className = "message-wrapper";
+        
         progressContainer = document.createElement("div");
         progressContainer.className = "message message--assistant";
         progressMessageEl = document.createElement("div");
         progressMessageEl.className = "message__body";
         progressContainer.appendChild(progressMessageEl);
-        chatMessagesEl.appendChild(progressContainer);
+        
+        // Add message to wrapper
+        progressWrapper.appendChild(progressContainer);
+        
+        // Add icons outside message border (at the end of message)
+        // Progress messages are assistant messages, so no edit icon
+        const iconsWrapper = createMessageIcons(progressContainer, progressMessageEl, "assistant", null);
+        progressWrapper.appendChild(iconsWrapper);
+        
+        chatMessagesEl.appendChild(progressWrapper);
       }
 
       // Update the message with the current task list
