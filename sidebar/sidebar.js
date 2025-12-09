@@ -198,17 +198,14 @@ function createMessageIcons(container, body, role, originalText = null) {
   copyBtn.setAttribute("aria-label", "Copy message");
   copyBtn.title = "Copy message";
   
-  // Copy icon SVG
-  copyBtn.innerHTML = `
-    <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" width="14" height="14">
-      <path d="M5.5 3.5V1.5C5.5 1.22386 5.72386 1 6 1H12.5C12.7761 1 13 1.22386 13 1.5V8.5C13 8.77614 12.7761 9 12.5 9H10.5V11.5C10.5 11.7761 10.2761 12 10 12H3.5C3.22386 12 3 11.7761 3 11.5V4.5C3 4.22386 3.22386 4 3.5 4H5.5V3.5ZM6 2V4.5C6 4.77614 6.22386 5 6.5 5H10V8H12V2H6ZM4 5H9.5V11H4V5Z" fill-rule="evenodd" clip-rule="evenodd" fill="currentColor"/>
-    </svg>
-  `;
+  // Copy icon SVG - store as constant for reuse
+  const copyIconSVG = `<svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" width="14" height="14"><path d="M5.5 3.5V1.5C5.5 1.22386 5.72386 1 6 1H12.5C12.7761 1 13 1.22386 13 1.5V8.5C13 8.77614 12.7761 9 12.5 9H10.5V11.5C10.5 11.7761 10.2761 12 10 12H3.5C3.22386 12 3 11.7761 3 11.5V4.5C3 4.22386 3.22386 4 3.5 4H5.5V3.5ZM6 2V4.5C6 4.77614 6.22386 5 6.5 5H10V8H12V2H6ZM4 5H9.5V11H4V5Z" fill-rule="evenodd" clip-rule="evenodd" fill="currentColor"/></svg>`;
   
-  // Create feedback (inline, doesn't shift layout)
-  const feedback = document.createElement("span");
-  feedback.className = "message__copy-feedback";
-  feedback.textContent = "Copied!";
+  // Checkmark icon SVG
+  const checkmarkIconSVG = `<svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" width="14" height="14"><path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z" fill="currentColor"/></svg>`;
+  
+  // Set initial copy icon
+  copyBtn.innerHTML = copyIconSVG;
   
   // Edit button (only for user messages)
   let editBtn = null;
@@ -231,7 +228,6 @@ function createMessageIcons(container, body, role, originalText = null) {
   if (editBtn) {
     iconsWrapper.appendChild(editBtn);
   }
-  iconsWrapper.appendChild(feedback);
   
   // Copy functionality
   copyBtn.addEventListener("click", async (e) => {
@@ -260,14 +256,20 @@ function createMessageIcons(container, body, role, originalText = null) {
       return; // Nothing to copy
     }
     
+    // Function to show checkmark and revert to copy icon
+    const showCheckmark = () => {
+      // Change icon to checkmark
+      copyBtn.innerHTML = checkmarkIconSVG;
+      
+      // Revert to copy icon after 2 seconds
+      setTimeout(() => {
+        copyBtn.innerHTML = copyIconSVG;
+      }, 2000);
+    };
+    
     try {
       await navigator.clipboard.writeText(textToCopy);
-      
-      // Show feedback
-      feedback.classList.add("show");
-      setTimeout(() => {
-        feedback.classList.remove("show");
-      }, 2000);
+      showCheckmark();
     } catch (err) {
       console.error('Failed to copy text:', err);
       // Fallback for older browsers
@@ -282,10 +284,7 @@ function createMessageIcons(container, body, role, originalText = null) {
       try {
         const successful = document.execCommand('copy');
         if (successful) {
-          feedback.classList.add("show");
-          setTimeout(() => {
-            feedback.classList.remove("show");
-          }, 2000);
+          showCheckmark();
         }
       } catch (fallbackErr) {
         console.error('Fallback copy failed:', fallbackErr);

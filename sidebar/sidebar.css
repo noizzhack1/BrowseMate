@@ -328,21 +328,6 @@ button {
   color: #6b7280;
 }
 
-/* Copy feedback - inline to avoid layout shift */
-.message__copy-feedback {
-  display: inline-block;
-  margin-left: 4px;
-  font-size: 10px;
-  color: #10b981;
-  opacity: 0;
-  transition: opacity 0.2s ease;
-  pointer-events: none;
-  white-space: nowrap;
-}
-
-.message__copy-feedback.show {
-  opacity: 1;
-}
 
 .message--assistant {
   background: #ffffff;
