@@ -328,6 +328,55 @@ button {
   color: #6b7280;
 }
 
+/* Edit mode styles */
+.message__body[contenteditable="true"] {
+  outline: none !important;
+  cursor: text;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.message__body[contenteditable="true"]:focus {
+  outline: none !important;
+}
+
+/* Save and Cancel button specific styles */
+.message__icon--save {
+  color: #10b981 !important;
+}
+
+.message__icon--save:hover {
+  color: #059669 !important;
+  background-color: rgba(16, 185, 129, 0.1) !important;
+}
+
+.message-wrapper--user .message__icon--save {
+  color: rgba(16, 185, 129, 0.9) !important;
+}
+
+.message-wrapper--user .message__icon--save:hover {
+  color: #10b981 !important;
+  background-color: rgba(16, 185, 129, 0.2) !important;
+}
+
+.message__icon--cancel {
+  color: #ef4444 !important;
+}
+
+.message__icon--cancel:hover {
+  color: #dc2626 !important;
+  background-color: rgba(239, 68, 68, 0.1) !important;
+}
+
+.message-wrapper--user .message__icon--cancel {
+  color: rgba(239, 68, 68, 0.9) !important;
+}
+
+.message-wrapper--user .message__icon--cancel:hover {
+  color: #ef4444 !important;
+  background-color: rgba(239, 68, 68, 0.2) !important;
+}
+
 
 .message--assistant {
   background: #ffffff;

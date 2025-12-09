@@ -293,19 +293,140 @@ function createMessageIcons(container, body, role, originalText = null) {
     }
   });
   
-  // Edit functionality (only for user messages)
+  // Edit functionality (only for user messages) - inline editing
   if (editBtn && originalText !== null) {
+    let isEditing = false;
+    let savedOriginalText = originalText;
+    
+    // Create Save and Cancel buttons (initially hidden)
+    const saveBtn = document.createElement("button");
+    saveBtn.className = "message__icon message__icon--save";
+    saveBtn.type = "button";
+    saveBtn.setAttribute("aria-label", "Save changes");
+    saveBtn.title = "Save";
+    saveBtn.innerHTML = `<svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" width="14" height="14"><path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z" fill="currentColor"/></svg>`;
+    saveBtn.style.display = 'none';
+    
+    const cancelBtn = document.createElement("button");
+    cancelBtn.className = "message__icon message__icon--cancel";
+    cancelBtn.type = "button";
+    cancelBtn.setAttribute("aria-label", "Cancel editing");
+    cancelBtn.title = "Cancel";
+    cancelBtn.innerHTML = `<svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" width="14" height="14"><path d="M3.72 3.72a.75.75 0 011.06 0L8 6.94l3.22-3.22a.75.75 0 111.06 1.06L9.06 8l3.22 3.22a.75.75 0 11-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 01-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 010-1.06z" fill="currentColor"/></svg>`;
+    cancelBtn.style.display = 'none';
+    
+    // Add Save and Cancel buttons to icons wrapper
+    iconsWrapper.appendChild(saveBtn);
+    iconsWrapper.appendChild(cancelBtn);
+    
+    // Function to enter edit mode
+    const enterEditMode = () => {
+      if (isEditing) return;
+      isEditing = true;
+      
+      // Store current text as original (in case user cancels)
+      savedOriginalText = body.textContent || body.innerText || '';
+      
+      // Make body contentEditable
+      body.contentEditable = 'true';
+      body.style.outline = 'none';
+      // Use appropriate border color based on message type
+      const borderColor = role === 'user' ? 'rgba(255, 255, 255, 0.5)' : '#2563eb';
+      body.style.border = `1px solid ${borderColor}`;
+      body.style.borderRadius = '4px';
+      body.style.padding = '4px 6px';
+      body.style.minHeight = '20px';
+      body.style.backgroundColor = role === 'user' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(37, 99, 235, 0.05)';
+      
+      // Hide edit button, show Save and Cancel
+      editBtn.style.display = 'none';
+      saveBtn.style.display = 'inline-flex';
+      cancelBtn.style.display = 'inline-flex';
+      
+      // Focus and select text in the editable area
+      body.focus();
+      const range = document.createRange();
+      range.selectNodeContents(body);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+    };
+    
+    // Function to exit edit mode
+    const exitEditMode = () => {
+      if (!isEditing) return;
+      isEditing = false;
+      
+      // Remove contentEditable and styling
+      body.contentEditable = 'false';
+      body.style.border = '';
+      body.style.borderRadius = '';
+      body.style.padding = '';
+      body.style.minHeight = '';
+      body.style.backgroundColor = '';
+      
+      // Show edit button, hide Save and Cancel
+      editBtn.style.display = 'inline-flex';
+      saveBtn.style.display = 'none';
+      cancelBtn.style.display = 'none';
+    };
+    
+    // Function to save changes
+    const saveChanges = () => {
+      const newText = body.textContent || body.innerText || '';
+      const trimmedText = newText.trim();
+      
+      if (trimmedText) {
+        // Update the message content
+        body.textContent = trimmedText;
+        // Update saved original text for future edits
+        savedOriginalText = trimmedText;
+      } else {
+        // If empty, restore original
+        body.textContent = savedOriginalText;
+      }
+      
+      exitEditMode();
+    };
+    
+    // Function to cancel editing
+    const cancelEditing = () => {
+      // Restore original text
+      body.textContent = savedOriginalText;
+      exitEditMode();
+    };
+    
+    // Edit button click handler
     editBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       e.preventDefault();
+      enterEditMode();
+    });
+    
+    // Save button click handler
+    saveBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      saveChanges();
+    });
+    
+    // Cancel button click handler
+    cancelBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      cancelEditing();
+    });
+    
+    // Handle Enter key to save, Escape to cancel
+    body.addEventListener("keydown", (e) => {
+      if (!isEditing) return;
       
-      // Put the original text in the input field
-      if (chatInputEl) {
-        chatInputEl.value = originalText;
-        chatInputEl.focus();
-        autoResizeTextArea(chatInputEl);
-        // Scroll input into view
-        chatInputEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        saveChanges();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        cancelEditing();
       }
     });
   }
