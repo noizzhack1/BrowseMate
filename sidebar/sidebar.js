@@ -182,9 +182,10 @@ async function setPageFrozen(freeze) {
  * Append a chat message bubble to the messages area.
  * @param {"user" | "assistant"} role
  * @param {string} text
+ * @returns {HTMLElement} The message body element for potential streaming updates
  */
 function appendMessage(role, text) {
-  if (!chatMessagesEl) return;
+  if (!chatMessagesEl) return null;
   const container = document.createElement("div");
   container.className = `message message--${role}`;
 
@@ -197,6 +198,136 @@ function appendMessage(role, text) {
 
   // Auto-scroll to bottom
   chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+  
+  return body;
+}
+
+/**
+ * Create a streaming message element that can be updated progressively.
+ * @param {"user" | "assistant"} role
+ * @returns {{container: HTMLElement, body: HTMLElement}} The container and body elements
+ */
+function createStreamingMessage(role) {
+  if (!chatMessagesEl) return null;
+  const container = document.createElement("div");
+  container.className = `message message--${role}`;
+
+  const body = document.createElement("div");
+  body.className = "message__body";
+  body.textContent = "";
+
+  container.appendChild(body);
+  chatMessagesEl.appendChild(container);
+
+  // Auto-scroll to bottom
+  chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+  
+  return { container, body };
+}
+
+/**
+ * Simple markdown to HTML converter for basic formatting
+ * Handles bold, lists, and preserves structure
+ * @param {string} markdown - Markdown text
+ * @returns {string} HTML string
+ */
+function markdownToHTML(markdown) {
+  if (!markdown) return '';
+  
+  // Escape HTML first to prevent XSS
+  let html = markdown
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  
+  // Convert **bold** to <strong>
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  
+  // Split into lines for list processing
+  const lines = html.split('\n');
+  const processedLines = [];
+  let inList = false;
+  let listType = null;
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // Check for numbered list (1. item)
+    const numberedMatch = line.match(/^(\d+)\.\s+(.+)$/);
+    if (numberedMatch) {
+      if (!inList || listType !== 'ol') {
+        if (inList) processedLines.push(`</${listType}>`);
+        processedLines.push('<ol>');
+        inList = true;
+        listType = 'ol';
+      }
+      processedLines.push(`<li>${numberedMatch[2]}</li>`);
+      continue;
+    }
+    
+    // Check for bullet list (- item, but not * which might be italic)
+    const bulletMatch = line.match(/^-\s+(.+)$/);
+    if (bulletMatch) {
+      if (!inList || listType !== 'ul') {
+        if (inList) processedLines.push(`</${listType}>`);
+        processedLines.push('<ul>');
+        inList = true;
+        listType = 'ul';
+      }
+      processedLines.push(`<li>${bulletMatch[1]}</li>`);
+      continue;
+    }
+    
+    // Regular line - close list if we were in one
+    if (inList) {
+      processedLines.push(`</${listType}>`);
+      inList = false;
+      listType = null;
+    }
+    
+    // Preserve empty lines as breaks
+    if (line.trim() === '') {
+      processedLines.push('<br>');
+    } else {
+      processedLines.push(line);
+    }
+  }
+  
+  // Close any open list
+  if (inList) {
+    processedLines.push(`</${listType}>`);
+  }
+  
+  html = processedLines.join('\n');
+  
+  // Convert remaining line breaks to <br>
+  html = html.replace(/\n/g, '<br>');
+  
+  return html;
+}
+
+/**
+ * Update a streaming message with new content.
+ * @param {HTMLElement} messageBody - The message body element to update
+ * @param {string} newContent - The new content to append or set
+ * @param {boolean} append - Whether to append (true) or replace (false) content
+ */
+function updateStreamingMessage(messageBody, newContent, append = true) {
+  if (!messageBody) return;
+  
+  if (append) {
+    // For streaming, we need to accumulate the full text and re-render
+    const currentText = messageBody.textContent || '';
+    const fullText = currentText + newContent;
+    messageBody.innerHTML = markdownToHTML(fullText);
+  } else {
+    messageBody.innerHTML = markdownToHTML(newContent);
+  }
+  
+  // Auto-scroll to bottom
+  if (chatMessagesEl) {
+    chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+  }
 }
 
 /**
@@ -206,9 +337,10 @@ function appendMessage(role, text) {
  * @param {boolean} includeContext
  * @param {Function} onProgress - Optional callback for progress updates
  * @param {AbortSignal} abortSignal - Signal to cancel the request
+ * @param {Function} onStreamChunk - Optional callback for streaming answer chunks
  * @returns {Promise<string>}
  */
-async function callLLMAPI(userText, includeContext = false, onProgress = null, abortSignal = null) {
+async function callLLMAPI(userText, includeContext = false, onProgress = null, abortSignal = null, onStreamChunk = null) {
   console.log('[callLLMAPI] Starting LLM API call');
   console.log('[callLLMAPI] User text:', userText);
   console.log('[callLLMAPI] Include context:', includeContext);
@@ -232,7 +364,7 @@ async function callLLMAPI(userText, includeContext = false, onProgress = null, a
     // Use Task A orchestrator to process the request
     // Task A will determine if it's a question or action and route accordingly
     console.log('[callLLMAPI] Calling processRequest...');
-    const result = await processRequest(context, userText, onProgress, abortSignal);
+    const result = await processRequest(context, userText, onProgress, abortSignal, onStreamChunk);
     console.log('[callLLMAPI] ProcessRequest completed');
     
     // Check if request was aborted
@@ -345,9 +477,39 @@ async function handleChatSubmit(event) {
   let reply;
   let progressMessageEl = null;
   let progressContainer = null;
+  let streamingMessageEl = null; // For streaming question answers
   let isPageFrozen = false; // Track if we've frozen the page
 
   try {
+    // Create a callback for streaming answer chunks (for questions)
+    const onStreamChunk = (chunk) => {
+      // Check if request was aborted
+      if (abortSignal.aborted) {
+        return;
+      }
+
+      // Remove "Thinking..." message if still there
+      if (chatMessagesEl && chatMessagesEl.lastChild) {
+        const lastMsg = chatMessagesEl.lastChild.querySelector('.message__body');
+        if (lastMsg && lastMsg.textContent === "Thinking...") {
+          chatMessagesEl.removeChild(chatMessagesEl.lastChild);
+        }
+      }
+
+      // Create streaming message if it doesn't exist
+      if (!streamingMessageEl) {
+        const streamingMsg = createStreamingMessage("assistant");
+        if (streamingMsg) {
+          streamingMessageEl = streamingMsg.body;
+        }
+      }
+
+      // Update streaming message with new chunk
+      if (streamingMessageEl) {
+        updateStreamingMessage(streamingMessageEl, chunk, true);
+      }
+    };
+
     // Create a callback for progress updates
     const onProgress = (taskList, currentStep, totalSteps, status) => {
       // Check if request was aborted
@@ -387,7 +549,7 @@ async function handleChatSubmit(event) {
       chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
     };
 
-    reply = await callLLMAPI(value, includeContext, onProgress, abortSignal);
+    reply = await callLLMAPI(value, includeContext, onProgress, abortSignal, onStreamChunk);
   } catch (error) {
     // Handle cancellation gracefully
     if (abortSignal.aborted || error.message === 'Request cancelled by user') {
@@ -424,8 +586,8 @@ async function handleChatSubmit(event) {
     if (chatSendBtn) chatSendBtn.style.display = "inline-flex";
   }
 
-  // If we only showed "Thinking..." and no progress, remove it
-  if (!progressMessageEl && chatMessagesEl && chatMessagesEl.lastChild) {
+  // If we only showed "Thinking..." and no progress/streaming, remove it
+  if (!progressMessageEl && !streamingMessageEl && chatMessagesEl && chatMessagesEl.lastChild) {
     const lastMsg = chatMessagesEl.lastChild.querySelector('.message__body');
     if (lastMsg && lastMsg.textContent === "Thinking...") {
       chatMessagesEl.removeChild(chatMessagesEl.lastChild);
@@ -435,8 +597,11 @@ async function handleChatSubmit(event) {
   // If we have a progress message, update it with the final result
   if (progressMessageEl && reply && reply.trim()) {
     progressMessageEl.textContent = reply;
+  } else if (streamingMessageEl) {
+    // Streaming message already updated, nothing to do
+    // The reply contains the full message but it's already displayed
   } else if (reply && reply.trim()) {
-    // Only append new message if we didn't have progress updates
+    // Only append new message if we didn't have progress updates or streaming
     appendMessage("assistant", reply);
   }
 }
