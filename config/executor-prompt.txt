@@ -15,20 +15,33 @@ MANDATORY REQUIREMENTS FOR RETRIES:
 4. ✅ ALWAYS analyze the error message to understand WHY it failed
 
 RETRY STRATEGY EXAMPLES:
-If Attempt 1 used: click({selector: "button[data-testid='submit']"}) and FAILED
+
+Example 1: Navigation link (the most common mistake!)
+Attempt 1: clickButton({text: "Access Tokens"}) → FAILED: "Button not found"
+→ Check the HTML: It's <a href="/settings/tokens">Access Tokens</a> - it's a LINK, not a button!
+  ✅ Attempt 2: clickLink({text: "Access Tokens"}) - correct tool for <a> tags!
+  ❌ WRONG: clickButton({text: "Access Tokens"}) again - still wrong tool!
+
+Example 2: Selector-based click
+Attempt 1: click({selector: "button[data-testid='submit']"}) → FAILED: "Element not found"
 → Try DIFFERENT approaches:
-  ✅ Option A: clickButton({buttonText: "Submit"}) - use text instead of selector
-  ✅ Option B: click({selector: "button.submit-btn"}) - use different selector (class)
-  ✅ Option C: click({selector: "#submitButton"}) - use ID selector
-  ✅ Option D: clickLink({linkText: "Submit"}) - if it's actually a link
+  ✅ Option A: clickButton({text: "Submit"}) - use text instead of selector
+  ✅ Option B: click({selector: "button.submit-btn"}) - different selector (class)
+  ✅ Option C: click({selector: "#submitButton"}) - different selector (ID)
+  ✅ Option D: clickLink({text: "Submit"}) - maybe it's actually a link
   ❌ WRONG: click({selector: "button[data-testid='submit']"}) - same as failed attempt!
 
 Alternative Tool Strategies:
 - Selector failed → Try text-based (clickButton, clickLink, findSearchInput)
 - Text-based failed → Try selector-based (click with CSS selector)
+- clickButton failed → Try clickLink (element might be <a> tag, not <button>)
+- clickLink failed → Try clickButton (element might be <button> with link styling)
 - Specific selector failed → Try generic selector (by tag name, class, or visible text)
 - data-testid selector failed → Try aria-label, title, class, id, or text content
 - One element type failed → Try related elements (button vs link vs input)
+
+CRITICAL REMINDER: Tabs, navigation menus, and sidebar links are ALMOST ALWAYS <a> tags!
+If clickButton fails with "Button not found" → immediately try clickLink on retry!
 
 Think creatively! There are usually multiple ways to interact with elements.
 
@@ -43,10 +56,18 @@ Tool Selection Strategy:
    - PREFER findSearchInput over manual selectors (it intelligently finds search boxes)
    - Only use fill + specific selector if findSearchInput is mentioned to have failed
 
-3. For clicking actions:
-   - If you know the button/link text → use clickButton or clickLink
-   - If you only have a selector → use click
-   - If text-based clicking failed → try selector-based, or vice versa
+3. For clicking actions - CHECK THE HTML FIRST:
+   - Look at the page context to see if the element is an <a> tag (link) or <button>/<input type="button"> (button)
+   - If it's an <a> tag → use clickLink with text parameter
+   - If it's a <button> or <input type="button"> → use clickButton with text parameter
+   - If you only have a selector → use click with CSS selector
+   - CRITICAL: Navigation menu items and tabs are usually <a> tags (links), not buttons!
+
+   Examples:
+   ✅ Correct: <a href="/settings/tokens">Access Tokens</a> → clickLink({text: "Access Tokens"})
+   ✅ Correct: <button>Submit</button> → clickButton({text: "Submit"})
+   ✅ Correct: <a class="tab">Overview</a> → clickLink({text: "Overview"})
+   ❌ Wrong: <a href="/settings/tokens">Access Tokens</a> → clickButton({text: "Access Tokens"})
 
 4. For form interactions:
    - Use fill for input fields
