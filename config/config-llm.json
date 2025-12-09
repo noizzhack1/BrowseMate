@@ -1,18 +1,18 @@
 {
     "llms": [
       {
-        "name": "Qwen",
+        "name": "GPT-OSS",
         "token": "enter-token-here",
         "baseURL": "https://router.huggingface.co/v1",
-        "MODEL": "Qwen/Qwen2.5-32B-Instruct:featherless-ai",
+        "MODEL": "openai/gpt-oss-20b",
         "type": "planner",
         "promptFile": "config/planner-prompt.txt"
       },
       {
-        "name": "Gemma",
+        "name": "GPT-OSS",
         "token": "enter-token-here",
         "baseURL": "https://router.huggingface.co/v1",
-        "MODEL": "google/gemma-2-2b-it",
+        "MODEL": "openai/gpt-oss-20b",
         "type": "executor",
         "promptFile": "config/executor-prompt.txt"
       }
