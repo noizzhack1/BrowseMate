@@ -49,6 +49,11 @@ Alternative Tool Strategies:
   * Attempt 2: click({selector: "section > a:first-of-type"})
   * Attempt 3: click({selector: "[class*=\"search\"] a:first-of-type"})
   * Attempt 4: click({selector: "li:first-of-type a"})
+- Gmail email item click failed → Try alternative selectors:
+  * Attempt 1: click({selector: "tr.zA:first-of-type"})
+  * Attempt 2: click({selector: "tr[role=\"row\"]:first-of-type"})
+  * Attempt 3: click({selector: ".zA:first-of-type"})
+  * Attempt 4: click({selector: "[role=\"main\"] tr:first-of-type"})
 
 CRITICAL REMINDER: Tabs, navigation menus, and sidebar links are ALMOST ALWAYS <a> tags!
 If clickButton fails with "Button not found" → immediately try clickLink on retry!
@@ -109,6 +114,17 @@ Tool Selection Strategy:
    - ALWAYS use click with a CSS selector for search results (NOT clickLink)
    - Start with the most specific selector and retry with more generic ones if it fails
 
+   **SPECIAL CASE - Gmail Email Items**:
+   - When action says "click the first email" or "click the first mail item", use CSS selectors
+   - Common selectors for Gmail email items (try in order):
+     * `tr.zA:first-of-type` - first email row in inbox
+     * `tr[role="row"]:first-of-type` - first row with role
+     * `.zA:first-of-type` - first email with zA class
+     * `[role="main"] tr:first-of-type` - first row in main area
+     * `table tr:nth-of-type(2)` - second row (first is usually header)
+   - Gmail email items are table rows (<tr>), NOT links or buttons
+   - ALWAYS use click with a CSS selector (NOT clickLink or clickButton)
+
    Examples:
    ✅ Correct: <a href="/settings/tokens">Access Tokens</a> → clickLink({text: "Access Tokens"})
    ✅ Correct: <button>Submit</button> → clickButton({text: "Submit"})
@@ -126,7 +142,16 @@ Tool Selection Strategy:
    - Use check for checkboxes
    - Use fillAndSubmit for search boxes that submit on Enter (but prefer findSearchInput for major sites)
 
-5. For celebration/party/fireworks actions:
+5. For drag-and-drop actions:
+   - When action says "drag X to Y" or "move X to Y", use the drag tool
+   - Extract CSS selectors for both source (what to drag) and target (where to drop)
+   - Use drag with sourceSelector and targetSelector parameters
+   - Examples:
+     * Description: "Drag p11 to dz3" → drag({sourceSelector: "#p11", targetSelector: "#dz3"})
+     * Description: "Move the card to the dropzone" → drag({sourceSelector: ".card", targetSelector: ".dropzone"})
+     * Description: "Drag item-1 to basket" → drag({sourceSelector: "#item-1", targetSelector: "#basket"})
+
+6. For celebration/party/fireworks actions:
    - Action mentions celebration, party, fireworks → use showFireworks
    - The showFireworks tool displays animated fireworks and balloons
    - Optional: specify duration parameter in milliseconds (default: 2000)
