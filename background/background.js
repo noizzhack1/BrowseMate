@@ -130,7 +130,7 @@ async function handleTranslatePageRequest(message, tabId) {
         }
 
         const textNodes = getTextNodes(document.body);
-        const textsToTranslate = textNodes.map(node => node.textContent.trim());
+        const textsToTranslate = textNodes.map(node => node.textContent); // Don't trim - preserves spacing
 
         return {
           texts: textsToTranslate,
@@ -150,112 +150,160 @@ async function handleTranslatePageRequest(message, tabId) {
       };
     }
 
-    // Batch texts to translate (to avoid too many API calls)
-    // Combine texts with a special separator that won't appear in normal text
+    // Split texts into chunks for parallel translation
     const SEPARATOR = '|||BROWSEMATE_SEP|||';
-    const batchedText = texts.join(SEPARATOR);
+    const CHUNK_SIZE = 50; // Process 50 text segments per chunk (increased for faster translation)
+    const chunks = [];
 
-    console.log('[background] Batched text length:', batchedText.length);
-    console.log('[background] First 500 chars:', batchedText.substring(0, 500));
+    for (let i = 0; i < texts.length; i += CHUNK_SIZE) {
+      chunks.push(texts.slice(i, i + CHUNK_SIZE));
+    }
+
+    console.log('[background] Split into', chunks.length, 'chunks for parallel translation');
+    console.log('[background] Chunk sizes:', chunks.map(c => c.length));
     console.log('[background] Total segments to translate:', texts.length);
 
-    // Use the LLM to translate
+    // Create LLM client once
     console.log('[background] Creating LLM client...');
     const llmClient = new LLMClient();
     console.log('[background] LLM client created, initializing...');
     await llmClient.initialize();
     console.log('[background] LLM client initialized successfully');
 
-    console.log('[background] Calling LLM for translation...');
-    console.log('[background] LLM request timestamp:', new Date().toISOString());
+    console.log('[background] Starting incremental batch translation of', chunks.length, 'chunks...');
+    console.log('[background] Translation start timestamp:', new Date().toISOString());
 
-    const translationPrompt = `You are a professional translator. Translate the following text segments to ${targetLanguage}. The segments are separated by "${SEPARATOR}". Return the translated segments in the same order, also separated by "${SEPARATOR}".
+    // Translate chunks in batches and update page incrementally
+    const BATCH_SIZE = 5;
+    const allTranslatedChunks = [];
+    let processedSegments = 0;
+
+    for (let batchStart = 0; batchStart < chunks.length; batchStart += BATCH_SIZE) {
+      const batchEnd = Math.min(batchStart + BATCH_SIZE, chunks.length);
+      const batchChunks = chunks.slice(batchStart, batchEnd);
+
+      console.log(`[background] Processing batch ${Math.floor(batchStart / BATCH_SIZE) + 1}/${Math.ceil(chunks.length / BATCH_SIZE)} (chunks ${batchStart + 1}-${batchEnd})`);
+
+      const batchPromises = batchChunks.map(async (chunk, batchIndex) => {
+        const chunkIndex = batchStart + batchIndex;
+        const batchedText = chunk.join(SEPARATOR);
+
+        const translationPrompt = `You are a professional translator. Translate the following text segments to ${targetLanguage}. The segments are separated by "${SEPARATOR}". Return the translated segments in the same order, also separated by "${SEPARATOR}".
 
 IMPORTANT:
 - Preserve the exact number of segments
+- Preserve leading and trailing whitespace in each segment (very important for spacing)
 - Preserve HTML entities and special characters
 - Keep numbers, URLs, and technical terms as-is unless they need translation
 - Maintain the separator "${SEPARATOR}" between segments
+- DO NOT add or remove spaces at the start or end of each segment
 
 Text to translate:
 ${batchedText}
 
 Return ONLY the translated text with the same separator, no additional explanation.`;
 
-    console.log('[background] Prompt length:', translationPrompt.length);
-    console.log('[background] Sending request to LLM...');
+        console.log(`[background] Chunk ${chunkIndex + 1}/${chunks.length}: Translating ${chunk.length} segments (${batchedText.length} chars)`);
 
-    const translatedText = await llmClient.generateCompletion(translationPrompt, {
-      temperature: 0.3,
-      maxTokens: 4000
-    });
+        const translatedText = await llmClient.generateCompletion(translationPrompt, {
+          temperature: 0.3,
+          maxTokens: 16000
+        });
 
-    console.log('[background] LLM response timestamp:', new Date().toISOString());
-    console.log('[background] Translation received, length:', translatedText.length);
-    console.log('[background] First 500 chars of translation:', translatedText.substring(0, 500));
+        console.log(`[background] Chunk ${chunkIndex + 1}/${chunks.length}: Received translation (${translatedText.length} chars)`);
 
-    // Split the translated text back into segments
-    const translatedTexts = translatedText.split(SEPARATOR).map(t => t.trim());
+        // Split and return translated segments (preserve whitespace)
+        const translatedSegments = translatedText.split(SEPARATOR);
 
-    console.log('[background] Translated', translatedTexts.length, 'segments');
+        return {
+          chunkIndex,
+          translatedSegments,
+          startIndex: chunkIndex * CHUNK_SIZE
+        };
+      });
+
+      // Wait for this batch to complete
+      const batchResults = await Promise.all(batchPromises);
+
+      // Sort by chunk index to maintain order
+      batchResults.sort((a, b) => a.chunkIndex - b.chunkIndex);
+
+      // Apply translations incrementally to the page
+      for (const result of batchResults) {
+        allTranslatedChunks.push(result.translatedSegments);
+
+        // Update page with this chunk's translations
+        await chrome.scripting.executeScript({
+          target: { tabId: tabId },
+          func: (translations, startIndex) => {
+            // Get text nodes again (in the same order)
+            function getTextNodes(element) {
+              const textNodes = [];
+              const walk = document.createTreeWalker(
+                element,
+                NodeFilter.SHOW_TEXT,
+                {
+                  acceptNode: (node) => {
+                    const parent = node.parentElement;
+                    if (!parent) return NodeFilter.FILTER_REJECT;
+                    if (['SCRIPT', 'STYLE', 'NOSCRIPT'].includes(parent.tagName)) {
+                      return NodeFilter.FILTER_REJECT;
+                    }
+                    if (node.textContent.trim() === '') {
+                      return NodeFilter.FILTER_REJECT;
+                    }
+                    return NodeFilter.FILTER_ACCEPT;
+                  }
+                }
+              );
+
+              while (walk.nextNode()) {
+                textNodes.push(walk.currentNode);
+              }
+              return textNodes;
+            }
+
+            const textNodes = getTextNodes(document.body);
+
+            // Apply translations for this chunk
+            let updated = 0;
+            for (let i = 0; i < translations.length; i++) {
+              const nodeIndex = startIndex + i;
+              if (nodeIndex < textNodes.length && translations[i]) {
+                textNodes[nodeIndex].textContent = translations[i];
+                updated++;
+              }
+            }
+
+            console.log(`[translatePage] Incrementally updated ${updated} nodes (starting from index ${startIndex})`);
+            return { updated: updated };
+          },
+          args: [result.translatedSegments, result.startIndex]
+        });
+
+        processedSegments += result.translatedSegments.length;
+        console.log(`[background] Applied chunk ${result.chunkIndex + 1} translation (${processedSegments}/${texts.length} segments done)`);
+      }
+
+      console.log(`[background] Batch ${Math.floor(batchStart / BATCH_SIZE) + 1} completed and applied`);
+    }
+
+    const translatedChunks = allTranslatedChunks;
+
+    console.log('[background] Translation end timestamp:', new Date().toISOString());
+    console.log('[background] All chunks translated successfully');
+
+    // Flatten chunks back into single array for logging
+    const translatedTexts = translatedChunks.flat();
+
+    console.log('[background] Final stats: Translated', translatedTexts.length, 'segments');
     console.log('[background] Expected', texts.length, 'segments');
-    console.log('[background] First 10 translated samples:', translatedTexts.slice(0, 10));
 
     if (translatedTexts.length !== texts.length) {
       console.warn('[background] Segment count mismatch! Original:', texts.length, 'Translated:', translatedTexts.length);
     }
 
-    // Apply translations to the page
-    console.log('[background] Starting to apply translations to page...');
-    await chrome.scripting.executeScript({
-      target: { tabId: tabId },
-      func: (translations) => {
-        // Get text nodes again (in the same order)
-        function getTextNodes(element) {
-          const textNodes = [];
-          const walk = document.createTreeWalker(
-            element,
-            NodeFilter.SHOW_TEXT,
-            {
-              acceptNode: (node) => {
-                const parent = node.parentElement;
-                if (!parent) return NodeFilter.FILTER_REJECT;
-                if (['SCRIPT', 'STYLE', 'NOSCRIPT'].includes(parent.tagName)) {
-                  return NodeFilter.FILTER_REJECT;
-                }
-                if (node.textContent.trim() === '') {
-                  return NodeFilter.FILTER_REJECT;
-                }
-                return NodeFilter.FILTER_ACCEPT;
-              }
-            }
-          );
-
-          while (walk.nextNode()) {
-            textNodes.push(walk.currentNode);
-          }
-          return textNodes;
-        }
-
-        const textNodes = getTextNodes(document.body);
-
-        // Apply translations
-        let updated = 0;
-        for (let i = 0; i < Math.min(textNodes.length, translations.length); i++) {
-          if (translations[i]) {
-            console.log(`[translatePage] Updating node ${i}: "${textNodes[i].textContent.substring(0, 50)}" -> "${translations[i].substring(0, 50)}"`);
-            textNodes[i].textContent = translations[i];
-            updated++;
-          }
-        }
-
-        console.log('[translatePage] Updated', updated, 'text nodes');
-        return { updated: updated };
-      },
-      args: [translatedTexts]
-    });
-
-    console.log('[background] Translation complete');
+    console.log('[background] Incremental translation complete - all chunks applied');
 
     return {
       success: true,
