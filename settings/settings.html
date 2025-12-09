@@ -144,7 +144,7 @@
       text-decoration: underline;
     }
 
-    /* MCP Styles */
+/* MCP Styles */
     .mcp-list {
       margin-bottom: 30px;
     }
@@ -193,11 +193,70 @@
     .mcp-add-form h3 {
       margin-top: 0;
     }
+
+    /* Model Selection Styles */
+    .models-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .model-card {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: 6px;
+      border: 1px solid #e0e0e0;
+      background: #ffffff;
+      cursor: pointer;
+    }
+
+    .model-card input[type="radio"] {
+      margin-top: 3px;
+    }
+
+    .model-card-content {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .model-card-title {
+      font-weight: 600;
+      font-size: 14px;
+      color: #111827;
+    }
+
+    .model-card-meta {
+      font-size: 12px;
+      color: #6b7280;
+    }
+
+    .local-model-form {
+      margin-top: 8px;
+      padding: 10px 12px;
+      border-radius: 6px;
+      border: 1px dashed #d1d5db;
+      background: #f9fafb;
+    }
+
+    .local-model-form-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .local-model-form-row input {
+      width: 100%;
+    }
   </style>
 </head>
 <body>
   <div class="settings-container">
-    <a href="../sidebar/sidebar.html" class="back-link">← Back to Chat</a>
+    <button type="button" id="backToSiteBtn" class="back-link">← Back to original site</button>
 
     <div class="settings-header">
       <h1>Settings</h1>
@@ -205,12 +264,62 @@
     </div>
 
     <form id="settingsForm" class="settings-form">
+      <!-- New model form (located at the top of the Settings page) -->
+      <div id="newModelForm" class="settings-form" style="margin-bottom: 20px; display: none;">
+        <div class="form-group">
+          <label for="newModelName">Model name</label>
+          <input id="newModelName" type="text" />
+          <small>Unique short name, e.g. "Qwen-32B".</small>
+        </div>
+
+        <div class="form-group">
+          <label for="newModelToken">Default token</label>
+          <input id="newModelToken" type="password" />
+          <small>Optional per-model token; leave blank to use the main API token.</small>
+        </div>
+
+        <div class="form-group">
+          <label for="newModelBaseURL">Base URL</label>
+          <input id="newModelBaseURL" type="url" placeholder="https://router.huggingface.co/v1" />
+        </div>
+
+        <div class="form-group">
+          <label for="newModelMODEL">MODEL</label>
+          <input id="newModelMODEL" type="text" placeholder="provider/model-id" />
+        </div>
+
+        <div class="form-group">
+          <label for="newModelPrompt">Default prompt</label>
+          <input id="newModelPrompt" type="text" />
+        </div>
+
+        <div class="settings-actions">
+          <button type="button" class="btn btn-primary" id="addModelSave">Save model</button>
+          <button type="button" class="btn btn-secondary" id="addModelCancel">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Planner / Executor model selection populated from llm-config.json (and any user-added models) -->
       <div class="form-group">
-        <label for="selectedLLM">Select LLM Provider</label>
-        <select id="selectedLLM" name="selectedLLM">
-          <!-- Options loaded dynamically from llm-config.json -->
+        <label for="plannerModel">Planner model</label>
+        <select id="plannerModel" name="plannerModel">
+          <!-- Options loaded dynamically -->
         </select>
-        <small>Choose your preferred LLM provider from the configuration</small>
+        <small>Model used for planning and deciding what actions to take.</small>
+      </div>
+
+      <div class="form-group">
+        <label for="executorModel">Executor model</label>
+        <select id="executorModel" name="executorModel">
+          <!-- Options loaded dynamically -->
+        </select>
+        <small>Model used for DOM automation / executor.</small>
+      </div>
+
+      <div class="form-group">
+        <button type="button" id="addModelBtn" class="btn btn-secondary">
+          Add new model
+        </button>
       </div>
 
       <div class="form-group">
@@ -222,7 +331,8 @@
           placeholder="Enter your API token"
           required
         />
-        <small>Enter your API token for the selected LLM provider</small>
+        <small>Enter the API token to use when a model does not define its own token.</small>
+        <button type="button" id="testBtn" class="btn btn-secondary" style="margin-top: 10px;">Test Connection</button>
       </div>
 
       <div class="form-group">
@@ -314,7 +424,6 @@
 
       <div class="settings-actions">
         <button type="submit" class="btn btn-primary">Save Settings</button>
-        <button type="button" id="testBtn" class="btn btn-secondary">Test Connection</button>
       </div>
 
       <div id="statusMessage" class="status-message"></div>
@@ -322,6 +431,6 @@
   </div>
 
   <script type="module" src="../lib/llm-client.js"></script>
-  <script type="module" src="settings.js"></script>
+  <script type="module" src="../settings/settings.js"></script>
 </body>
 </html>

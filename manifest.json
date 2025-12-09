@@ -17,7 +17,8 @@
     "default_title": "BrowseMate Chat"
   },
   "background": {
-    "service_worker": "background/background.js"
+    "service_worker": "background/background.js",
+    "type": "module"
   },
   "side_panel": {
     "default_path": "sidebar/sidebar.html"
@@ -35,7 +36,13 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["lib/llm-config.json"],
+      "resources": [
+        "lib/llm-config.json",
+        "lib/llm-client.js",
+        "lib/action-tools.js",
+        "config/*",
+        "settings/*"
+      ],
       "matches": ["<all_urls>"]
     }
   ]
