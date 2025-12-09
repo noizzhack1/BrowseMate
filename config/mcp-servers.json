@@ -1,0 +1,12 @@
+[
+  {
+    "id": "demo-server",
+    "name": "Demo Server",
+    "type": "http",
+    "url": "http://localhost:8000/mcp",
+    "auth": {
+      "type": "none"
+    },
+    "enabled": true
+  }
+]

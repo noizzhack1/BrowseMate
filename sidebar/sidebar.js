@@ -3,6 +3,8 @@
 import { processRequest } from '../lib/task-planner.js';
 // Import LLMClient for backward compatibility and settings
 import { LLMClient } from '../lib/llm-client.js';
+// Import memory manager for conversation history
+import { getMemoryManager } from '../lib/memory-manager.js';
 
 // =========================
 // DOM references
@@ -15,6 +17,8 @@ const chatFormEl = document.getElementById("chatForm");
 /** @type {HTMLTextAreaElement | null} */
 const chatInputEl = document.getElementById("chatInput");
 /** @type {HTMLButtonElement | null} */
+const newChatBtn = document.getElementById("newChatBtn");
+/** @type {HTMLButtonElement | null} */
 const chatToggleBtn = document.getElementById("chatToggle");
 /** @type {HTMLButtonElement | null} */
 const settingsBtn = document.getElementById("settingsBtn");
@@ -22,6 +26,28 @@ const settingsBtn = document.getElementById("settingsBtn");
 const includePageContextCheckbox = document.getElementById("includePageContext");
 /** @type {HTMLDivElement | null} */
 const sidebarRootEl = document.querySelector(".sidebar-root");
+/** @type {HTMLButtonElement | null} */
+const chatStopBtn = document.getElementById("chatStop");
+/** @type {HTMLButtonElement | null} */
+const chatSendBtn = document.getElementById("chatSend");
+/** @type {HTMLButtonElement | null} */
+const memoryStatsBtn = document.getElementById("memoryStatsBtn");
+
+// =========================
+// Request cancellation state
+// =========================
+
+/** @type {AbortController | null} */
+let currentAbortController = null;
+/** @type {boolean} */
+let isRequestInProgress = false;
+
+// =========================
+// Memory manager instance
+// =========================
+
+/** @type {import('../lib/memory-manager.js').MemoryManager | null} */
+let memoryManager = null;
 
 // =========================
 // Page Context & Freeze helpers
@@ -36,9 +62,23 @@ async function getPageContext() {
   try {
     // Get reference to the currently active tab
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    
+
     // Return empty context if no valid tab is found
     if (!tab || !tab.id) return { url: "", title: "", text: "", html: "" };
+
+    // Check if this is a protected Chrome URL where script injection is not allowed
+    if (tab.url && (tab.url.startsWith('chrome://') ||
+                    tab.url.startsWith('chrome-extension://') ||
+                    tab.url.startsWith('edge://') ||
+                    tab.url.startsWith('about:'))) {
+      console.warn('[getPageContext] Cannot inject scripts into protected page:', tab.url);
+      return {
+        url: tab.url,
+        title: tab.title || "",
+        text: `This is a protected browser page (${tab.url}). BrowseMate cannot interact with chrome://, edge://, about: or extension pages due to browser security restrictions.`,
+        html: ""
+      };
+    }
 
     // Execute script in the context of the active tab to extract page information
     const results = await chrome.scripting.executeScript({
@@ -46,7 +86,7 @@ async function getPageContext() {
       func: () => {
         // Clone the body to extract text without modifying the actual DOM
         const clone = document.body.cloneNode(true);
-        
+
         // Remove script, style, and noscript elements from the clone (not needed for text extraction)
         const scripts = clone.querySelectorAll("script, style, noscript");
         scripts.forEach((el) => el.remove());
@@ -87,6 +127,22 @@ async function setPageFrozen(freeze) {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab || !tab.id) return;
+
+<<<<<<< HEAD
+    // Skip freezing for protected browser pages
+    // Chrome doesn't allow script injection into these pages
+    if (tab.url && (tab.url.startsWith('chrome://') ||
+                    tab.url.startsWith('chrome-extension://') ||
+                    tab.url.startsWith('edge://') ||
+                    tab.url.startsWith('about:'))) {
+      console.warn('[setPageFrozen] Cannot freeze protected page:', tab.url);
+=======
+    // Skip freezing for extension pages (chrome-extension:// URLs)
+    // Chrome doesn't allow script injection into extension pages
+    if (tab.url && tab.url.startsWith('chrome-extension://')) {
+>>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
+      return;
+    }
 
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
@@ -161,8 +217,9 @@ async function setPageFrozen(freeze) {
  * Append a chat message bubble to the messages area.
  * @param {"user" | "assistant"} role
  * @param {string} text
+ * @param {boolean} saveToMemory - Whether to save this message to memory (default: true)
  */
-function appendMessage(role, text) {
+function appendMessage(role, text, saveToMemory = true) {
   if (!chatMessagesEl) return;
   const container = document.createElement("div");
   container.className = `message message--${role}`;
@@ -176,6 +233,53 @@ function appendMessage(role, text) {
 
   // Auto-scroll to bottom
   chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+
+  // Save to memory (skip temporary messages like "Thinking...")
+  if (saveToMemory && memoryManager && text !== "Thinking...") {
+    memoryManager.addMessage(role, text).catch(error => {
+      console.error('[appendMessage] Failed to save message to memory:', error);
+    });
+  }
+}
+
+/**
+ * Load conversation history from memory and display it
+ * @returns {Promise<void>}
+ */
+async function loadConversationHistory() {
+  if (!memoryManager || !chatMessagesEl) return;
+
+  try {
+    // Get all messages from memory
+    const messages = memoryManager.getAllMessages();
+    console.log(`[loadConversationHistory] Loading ${messages.length} messages from memory`);
+
+    // Clear current messages
+    chatMessagesEl.innerHTML = "";
+
+    // If there are messages, display them
+    if (messages.length > 0) {
+      messages.forEach(msg => {
+        // Don't save back to memory when loading (avoid duplicates)
+        appendMessage(msg.role, msg.content, false);
+      });
+    } else {
+      // Show welcome message if no history
+      appendMessage(
+        "assistant",
+        "Hi, I'm BrowseMate Chat living in your sidebar. Type a message below to start a conversation.",
+        false
+      );
+    }
+  } catch (error) {
+    console.error('[loadConversationHistory] Failed to load conversation history:', error);
+    // Show welcome message on error
+    appendMessage(
+      "assistant",
+      "Hi, I'm BrowseMate Chat living in your sidebar. Type a message below to start a conversation.",
+      false
+    );
+  }
 }
 
 /**
@@ -184,13 +288,14 @@ function appendMessage(role, text) {
  * @param {string} userText
  * @param {boolean} includeContext
  * @param {Function} onProgress - Optional callback for progress updates
+ * @param {AbortSignal} abortSignal - Signal to cancel the request
  * @returns {Promise<string>}
  */
-async function callLLMAPI(userText, includeContext = false, onProgress = null) {
+async function callLLMAPI(userText, includeContext = false, onProgress = null, abortSignal = null) {
   console.log('[callLLMAPI] Starting LLM API call');
   console.log('[callLLMAPI] User text:', userText);
   console.log('[callLLMAPI] Include context:', includeContext);
-  
+
   try {
     // Get page context if requested
     let context = null;
@@ -207,11 +312,29 @@ async function callLLMAPI(userText, includeContext = false, onProgress = null) {
       console.log('[callLLMAPI] Context not requested, skipping');
     }
 
+    // Get recent conversation history from memory
+    let conversationHistory = [];
+    if (memoryManager) {
+      try {
+        // Get recent messages (excluding the current user message which we're about to send)
+        conversationHistory = memoryManager.getRecentMessages(10);
+        console.log('[callLLMAPI] Retrieved conversation history:', conversationHistory.length, 'messages');
+      } catch (error) {
+        console.error('[callLLMAPI] Failed to get conversation history:', error);
+        conversationHistory = [];
+      }
+    }
+
     // Use Task A orchestrator to process the request
     // Task A will determine if it's a question or action and route accordingly
     console.log('[callLLMAPI] Calling processRequest...');
-    const result = await processRequest(context, userText, onProgress);
+    const result = await processRequest(context, userText, onProgress, abortSignal, conversationHistory);
     console.log('[callLLMAPI] ProcessRequest completed');
+    
+    // Check if request was aborted
+    if (abortSignal && abortSignal.aborted) {
+      throw new Error('Request cancelled by user');
+    }
     console.log('[callLLMAPI] Result type:', result.type);
     console.log('[callLLMAPI] Result:', result);
 
@@ -226,6 +349,22 @@ async function callLLMAPI(userText, includeContext = false, onProgress = null) {
       const formattedMessage = `${status} ${result.message}`;
       console.log('[callLLMAPI] Returning action result:', formattedMessage);
       return formattedMessage;
+    } else if (result.type === 'execution') {
+<<<<<<< HEAD
+      // Sequential execution completed - show message only
+      console.log('[callLLMAPI] Returning execution result');
+      return result.message;
+=======
+      // Sequential execution completed - show task list
+      console.log('[callLLMAPI] Returning execution result with task list');
+      const header = result.message + '\n\n';
+      const taskList = result.taskList || 'No tasks to display';
+      return header + taskList;
+>>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
+    } else if (result.type === 'plan') {
+      // Plan created (old format backward compatibility)
+      console.log('[callLLMAPI] Returning plan');
+      return result.message;
     } else {
       // Unknown type
       console.warn('[callLLMAPI] Unknown result type:', result.type);
@@ -236,6 +375,11 @@ async function callLLMAPI(userText, includeContext = false, onProgress = null) {
     console.error('[callLLMAPI] Task A processing error:', error);
     console.error('[callLLMAPI] Error message:', error.message);
     console.error('[callLLMAPI] Error stack:', error.stack);
+
+    // Re-throw cancellation errors so they can be handled in handleChatSubmit
+    if (error.message === 'Request cancelled by user') {
+      throw error;
+    }
 
     if (error.message && error.message.includes('token')) {
       return "Please configure your API token in Settings (click ⚙️ button).";
@@ -273,6 +417,11 @@ async function handleChatSubmit(event) {
     return;
   }
 
+  // Prevent multiple simultaneous requests
+  if (isRequestInProgress) {
+    return;
+  }
+
   // Show user message
   appendMessage("user", value);
 
@@ -283,56 +432,109 @@ async function handleChatSubmit(event) {
   // Check if page context should be included
   const includeContext = includePageContextCheckbox?.checked || false;
 
-  // Freeze page and show loading indicator
-  await setPageFrozen(true);
-  appendMessage("assistant", "Thinking...");
+  // Create abort controller for this request
+  currentAbortController = new AbortController();
+  const abortSignal = currentAbortController.signal;
+  isRequestInProgress = true;
+
+  // Update UI: show Stop button, hide Send button
+  if (chatStopBtn) chatStopBtn.style.display = "inline-flex";
+  if (chatSendBtn) chatSendBtn.style.display = "none";
+
+  // Show loading indicator (but don't freeze page yet - only freeze when actions start)
+  // Don't save "Thinking..." to memory
+  appendMessage("assistant", "Thinking...", false);
 
   let reply;
   let progressMessageEl = null;
+  let progressContainer = null;
+<<<<<<< HEAD
+  let isPageFrozen = false; // Track if we've frozen the page
+=======
+>>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
 
   try {
     // Create a callback for progress updates
-    const onProgress = (progress) => {
+    const onProgress = (taskList, currentStep, totalSteps, status) => {
+<<<<<<< HEAD
+      // Check if request was aborted
+      if (abortSignal.aborted) {
+        return;
+      }
+
+      // Freeze page when actions start (first time onProgress is called)
+      if (!isPageFrozen) {
+        setPageFrozen(true);
+        isPageFrozen = true;
+      }
+
+=======
+>>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
       // Remove "Thinking..." message if still there
-      if (chatMessagesEl && chatMessagesEl.lastChild && chatMessagesEl.lastChild.textContent === "Thinking...") {
-        chatMessagesEl.removeChild(chatMessagesEl.lastChild);
+      if (chatMessagesEl && chatMessagesEl.lastChild) {
+        const lastMsg = chatMessagesEl.lastChild.querySelector('.message__body');
+        if (lastMsg && lastMsg.textContent === "Thinking...") {
+          chatMessagesEl.removeChild(chatMessagesEl.lastChild);
+        }
       }
 
-      // Create or update progress message
+      // Create progress message if it doesn't exist
       if (!progressMessageEl) {
-        const container = document.createElement("div");
-        container.className = "message message--assistant";
-        const body = document.createElement("div");
-        body.className = "message__body";
-        container.appendChild(body);
-        chatMessagesEl.appendChild(container);
-        progressMessageEl = body;
+        progressContainer = document.createElement("div");
+        progressContainer.className = "message message--assistant";
+        progressMessageEl = document.createElement("div");
+        progressMessageEl.className = "message__body";
+        progressContainer.appendChild(progressMessageEl);
+        chatMessagesEl.appendChild(progressContainer);
       }
 
-      // Format progress update
-      const statusIcon = progress.status === 'completed' ? '✓' :
-                        progress.status === 'failed' ? '✗' : '⋯';
-      const stepText = `Step ${progress.step}/${progress.total}: ${progress.description} ${statusIcon}`;
+      // Update the message with the current task list
+      const header = `Executing actions (${currentStep}/${totalSteps})...\n\n`;
+      progressMessageEl.textContent = header + taskList;
 
-      // Update or append to progress message
-      const lines = progressMessageEl.textContent.split('\n').filter(l => l.trim());
-
-      if (progress.status === 'executing') {
-        // Add new step
-        lines.push(stepText);
-      } else {
-        // Update last line with completion status
-        lines[lines.length - 1] = stepText;
-      }
-
-      progressMessageEl.textContent = lines.join('\n');
+      // Auto-scroll to bottom
       chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
     };
 
-    reply = await callLLMAPI(value, includeContext, onProgress);
+    reply = await callLLMAPI(value, includeContext, onProgress, abortSignal);
+  } catch (error) {
+    // Handle cancellation gracefully
+    if (abortSignal.aborted || error.message === 'Request cancelled by user') {
+      // Remove "Thinking..." message if still there
+      if (chatMessagesEl && chatMessagesEl.lastChild) {
+        const lastMsg = chatMessagesEl.lastChild.querySelector('.message__body');
+        if (lastMsg && lastMsg.textContent === "Thinking...") {
+          chatMessagesEl.removeChild(chatMessagesEl.lastChild);
+        }
+      }
+      // Update progress message if it exists
+      if (progressMessageEl) {
+        progressMessageEl.textContent = "Got it. What next?";
+        // Save cancellation message to memory
+        if (memoryManager) {
+          memoryManager.addMessage("assistant", "Got it. What next?").catch(console.error);
+        }
+      } else {
+        appendMessage("assistant", "Got it. What next?");
+      }
+      reply = null; // Don't show error message for cancellation
+    } else {
+      // Re-throw other errors to be handled by existing error handling
+      throw error;
+    }
   } finally {
-    // Always unfreeze, even if the API errors
-    await setPageFrozen(false);
+    // Always unfreeze if we froze the page, even if the API errors
+    if (isPageFrozen) {
+      await setPageFrozen(false);
+    }
+    
+    // Reset request state
+    isRequestInProgress = false;
+    currentAbortController = null;
+    
+    // Update UI: hide Stop button, show Send button
+    if (chatStopBtn) chatStopBtn.style.display = "none";
+    if (chatSendBtn) chatSendBtn.style.display = "inline-flex";
   }
 
   // If we only showed "Thinking..." and no progress, remove it
@@ -343,8 +545,20 @@ async function handleChatSubmit(event) {
     }
   }
 
-  // Show actual response (only if it's not empty and different from progress)
-  if (reply && reply.trim()) {
+  // If we have a progress message, update it with the final result
+  if (progressMessageEl && reply && reply.trim()) {
+    progressMessageEl.textContent = reply;
+<<<<<<< HEAD
+    // Save the final reply to memory
+    if (memoryManager) {
+      memoryManager.addMessage("assistant", reply).catch(error => {
+        console.error('[handleChatSubmit] Failed to save assistant reply to memory:', error);
+      });
+    }
+=======
+>>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
+  } else if (reply && reply.trim()) {
+    // Only append new message if we didn't have progress updates
     appendMessage("assistant", reply);
   }
 }
@@ -370,22 +584,186 @@ function toggleChatPanel() {
 }
 
 /**
- * Open settings page in a new tab
+ * Start a brand-new chat session:
+ * - Clear all existing messages
+<<<<<<< HEAD
+ * - Clear conversation history from memory
+ * - Reset the input field
+ * - Show the initial welcome message again
  */
-function openSettings() {
+async function startNewChat() {
+  console.log('[startNewChat] Starting new chat session');
+
+  // Clear memory
+  if (memoryManager) {
+    try {
+      await memoryManager.clearHistory();
+      console.log('[startNewChat] Conversation history cleared from memory');
+    } catch (error) {
+      console.error('[startNewChat] Failed to clear memory:', error);
+    }
+  }
+
+  // Clear UI
+=======
+ * - Reset the input field
+ * - Show the initial welcome message again
+ */
+function startNewChat() {
+>>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
+  if (chatMessagesEl) {
+    chatMessagesEl.innerHTML = "";
+  }
+  if (chatInputEl) {
+    chatInputEl.value = "";
+    autoResizeTextArea(chatInputEl);
+  }
+
+<<<<<<< HEAD
+  // Show welcome message (and save to memory)
+  appendMessage(
+    "assistant",
+    "Hi, I'm BrowseMate Chat living in your sidebar. Type a message below to start a conversation."
+=======
+  appendMessage(
+    "assistant",
+    "Hi, I’m BrowseMate Chat living in your sidebar. Type a message below to start a conversation."
+>>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
+  );
+}
+
+/**
+<<<<<<< HEAD
+ * Handle Stop button click - cancel the current request
+ */
+function handleStopClick() {
+  if (currentAbortController && isRequestInProgress) {
+    // Abort the current request
+    currentAbortController.abort();
+    console.log('[handleStopClick] Request cancelled by user');
+  }
+}
+
+/**
+ * Handle Memory Stats button click - show conversation memory statistics
+ */
+function handleMemoryStatsClick() {
+  if (!memoryManager) {
+    alert('Memory manager not initialized');
+    return;
+  }
+
+  try {
+    const stats = memoryManager.getStats();
+
+    // Format time
+    const formatTime = (timestamp) => {
+      if (!timestamp) return 'Never';
+      const date = new Date(timestamp);
+      return date.toLocaleString();
+    };
+
+    // Build stats message
+    const statsMessage = `Conversation Memory Stats:
+
+Total messages: ${stats.totalMessages}
+User messages: ${stats.userMessages}
+Assistant messages: ${stats.assistantMessages}
+
+First message: ${formatTime(stats.firstMessageTime)}
+Last message: ${formatTime(stats.lastMessageTime)}
+
+Memory is automatically saved to browser storage.
+Use "New Chat" button to clear conversation history.`;
+
+    alert(statsMessage);
+  } catch (error) {
+    console.error('[handleMemoryStatsClick] Failed to get memory stats:', error);
+    alert('Error retrieving memory stats');
+  }
+}
+
+/**
+=======
+>>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
+ * Toggle the Settings page as a separate tab.
+ * If a Settings tab is already open, close it; otherwise open it.
+ */
+async function toggleSettings() {
   const settingsUrl = chrome.runtime.getURL('settings/settings.html');
-  chrome.tabs.create({ url: settingsUrl }).catch((error) => {
-    console.error('Error opening settings:', error);
+  try {
+    // Look for any existing Settings tabs
+    const tabs = await chrome.tabs.query({ url: `${settingsUrl}*` });
+
+    if (tabs && tabs.length > 0) {
+      // Delegate closing & focus restoration to the background script so that
+      // both the Settings icon and the in-page Back link use identical logic.
+      chrome.runtime.sendMessage({ type: 'BROWSEMATE_CLOSE_SETTINGS' });
+      return;
+    }
+
+    // No existing Settings tab, remember the currently active tab then open Settings
+    try {
+      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (activeTab && typeof activeTab.id === 'number') {
+        await chrome.storage.session.set({ browsemate_last_active_tab: activeTab.id });
+      }
+    } catch (activeErr) {
+      console.warn('Error capturing last active tab before opening Settings:', activeErr);
+    }
+
+    // Pass the origin tab ID via query string so this particular Settings instance
+    // always knows which tab to return focus to when "Back" is clicked.
+    let urlWithOrigin = settingsUrl;
+    try {
+      const stored = await chrome.storage.session.get('browsemate_last_active_tab');
+      if (typeof stored.browsemate_last_active_tab === 'number') {
+        const originId = stored.browsemate_last_active_tab;
+        const u = new URL(settingsUrl);
+        u.searchParams.set('originTabId', String(originId));
+        urlWithOrigin = u.toString();
+      }
+    } catch (err) {
+      console.warn('Error attaching originTabId to settings URL:', err);
+    }
+
+    await chrome.tabs.create({ url: urlWithOrigin });
+  } catch (error) {
+    console.error('Error toggling settings:', error);
     // Fallback: try to open in current window
-    window.open(settingsUrl, '_blank');
-  });
+    try {
+      window.open(settingsUrl, '_blank');
+    } catch (_) {
+      // ignore
+    }
+  }
 }
 
 // =========================
 // Initialisation
 // =========================
 
-function initChat() {
+async function initChat() {
+  console.log('[initChat] Initializing chat...');
+
+  // Initialize memory manager
+  memoryManager = getMemoryManager();
+  try {
+    await memoryManager.initialize();
+    console.log('[initChat] Memory manager initialized');
+
+    // Load conversation history from memory
+    await loadConversationHistory();
+  } catch (error) {
+    console.error('[initChat] Failed to initialize memory manager:', error);
+    // Show welcome message as fallback
+    appendMessage(
+      "assistant",
+      "Hi, I'm BrowseMate Chat living in your sidebar. Type a message below to start a conversation.",
+      false
+    );
+  }
+
   if (chatFormEl) {
     chatFormEl.addEventListener("submit", handleChatSubmit);
   }
@@ -407,18 +785,27 @@ function initChat() {
     autoResizeTextArea(chatInputEl);
   }
 
-  // Seed with a friendly assistant welcome message
-  appendMessage(
-    "assistant",
-    "Hi, I’m BrowseMate Chat living in your sidebar. Type a message below to start a conversation."
-  );
-
   if (chatToggleBtn) {
     chatToggleBtn.addEventListener("click", toggleChatPanel);
   }
 
+  if (newChatBtn) {
+    newChatBtn.addEventListener("click", startNewChat);
+  }
+
   if (settingsBtn) {
-    settingsBtn.addEventListener("click", openSettings);
+    settingsBtn.addEventListener("click", toggleSettings);
+<<<<<<< HEAD
+  }
+
+  if (chatStopBtn) {
+    chatStopBtn.addEventListener("click", handleStopClick);
+  }
+
+  if (memoryStatsBtn) {
+    memoryStatsBtn.addEventListener("click", handleMemoryStatsClick);
+=======
+>>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
   }
 }
 
@@ -427,4 +814,3 @@ if (document.readyState === "loading") {
 } else {
   initChat();
 }
-

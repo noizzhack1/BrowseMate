@@ -1,0 +1,36 @@
+- [ ]  Add Memory to conversation
+- [ ]  Task mechanism for plan (create a task class for the planner)
+- [ ]  Planned list must be shown to the user before executing.
+- [ ]  Execute one task each time
+- [ ]  After each execute check plan again and update by the screen
+- [ ]  Add MCP Client capabilities
+- [ ]  Error handling
+<<<<<<< HEAD
+- [ ]  Expand Actions:
+    - [ ]  Click (button, url, video, image)
+    - [ ]  Scroll
+    - [ ]  Focus
+    - [ ]  Fill
+    - [ ]  OpenTab
+    - [ ]  ChangeTab
+    - [ ]  drag
+    - [ ]  Wait For
+    - [ ]  Zoom
+    - [ ]  Press Enter After fill search
+    - [ ]  Upload file (?)
+    - [x]  Translate page
+=======
+- [x]  Expand Actions:
+    - [x]  Click (button, url, video, image)
+    - [x]  Scroll
+    - [x]  Focus
+    - [x]  Fill
+    - [x]  OpenTab
+    - [x]  ChangeTab
+    - [x]  drag
+    - [x]  Wait For
+    - [x]  Zoom
+    - [x]  Press Enter After fill search
+    - [x]  Upload file
+>>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
+- [ ]  Support for history fetch

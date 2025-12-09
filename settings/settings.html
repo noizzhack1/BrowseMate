@@ -105,6 +105,18 @@
       padding: 10px;
       border-radius: 4px;
       display: none;
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 1000;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      max-width: 300px;
+      animation: slideIn 0.3s ease-out;
+    }
+
+    @keyframes slideIn {
+      from { transform: translateY(100%); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
     }
 
     .status-message.success {
@@ -131,11 +143,120 @@
     .back-link:hover {
       text-decoration: underline;
     }
+
+/* MCP Styles */
+    .mcp-list {
+      margin-bottom: 30px;
+    }
+
+    .mcp-item {
+      background: white;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      padding: 15px;
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .mcp-item.disabled {
+      opacity: 0.6;
+      background: #f5f5f5;
+    }
+
+    .mcp-info h4 {
+      margin: 0 0 5px 0;
+      font-size: 16px;
+    }
+
+    .mcp-info p {
+      margin: 0;
+      color: #666;
+      font-size: 12px;
+    }
+
+    .mcp-controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .mcp-add-form {
+      background: #fff;
+      padding: 20px;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      margin-bottom: 20px;
+    }
+
+    .mcp-add-form h3 {
+      margin-top: 0;
+    }
+
+    /* Model Selection Styles */
+    .models-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .model-card {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: 6px;
+      border: 1px solid #e0e0e0;
+      background: #ffffff;
+      cursor: pointer;
+    }
+
+    .model-card input[type="radio"] {
+      margin-top: 3px;
+    }
+
+    .model-card-content {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .model-card-title {
+      font-weight: 600;
+      font-size: 14px;
+      color: #111827;
+    }
+
+    .model-card-meta {
+      font-size: 12px;
+      color: #6b7280;
+    }
+
+    .local-model-form {
+      margin-top: 8px;
+      padding: 10px 12px;
+      border-radius: 6px;
+      border: 1px dashed #d1d5db;
+      background: #f9fafb;
+    }
+
+    .local-model-form-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .local-model-form-row input {
+      width: 100%;
+    }
   </style>
 </head>
 <body>
   <div class="settings-container">
-    <a href="../sidebar/sidebar.html" class="back-link">← Back to Chat</a>
+    <button type="button" id="backToSiteBtn" class="back-link">← Back to original site</button>
 
     <div class="settings-header">
       <h1>Settings</h1>
@@ -143,12 +264,62 @@
     </div>
 
     <form id="settingsForm" class="settings-form">
+      <!-- New model form (located at the top of the Settings page) -->
+      <div id="newModelForm" class="settings-form" style="margin-bottom: 20px; display: none;">
+        <div class="form-group">
+          <label for="newModelName">Model name</label>
+          <input id="newModelName" type="text" />
+          <small>Unique short name, e.g. "Qwen-32B".</small>
+        </div>
+
+        <div class="form-group">
+          <label for="newModelToken">Default token</label>
+          <input id="newModelToken" type="password" />
+          <small>Optional per-model token; leave blank to use the main API token.</small>
+        </div>
+
+        <div class="form-group">
+          <label for="newModelBaseURL">Base URL</label>
+          <input id="newModelBaseURL" type="url" placeholder="https://router.huggingface.co/v1" />
+        </div>
+
+        <div class="form-group">
+          <label for="newModelMODEL">MODEL</label>
+          <input id="newModelMODEL" type="text" placeholder="provider/model-id" />
+        </div>
+
+        <div class="form-group">
+          <label for="newModelPrompt">Default prompt</label>
+          <input id="newModelPrompt" type="text" />
+        </div>
+
+        <div class="settings-actions">
+          <button type="button" class="btn btn-primary" id="addModelSave">Save model</button>
+          <button type="button" class="btn btn-secondary" id="addModelCancel">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Planner / Executor model selection populated from llm-config.json (and any user-added models) -->
       <div class="form-group">
-        <label for="selectedLLM">Select LLM Provider</label>
-        <select id="selectedLLM" name="selectedLLM">
-          <!-- Options loaded dynamically from llm-config.json -->
+        <label for="plannerModel">Planner model</label>
+        <select id="plannerModel" name="plannerModel">
+          <!-- Options loaded dynamically -->
         </select>
-        <small>Choose your preferred LLM provider from the configuration</small>
+        <small>Model used for planning and deciding what actions to take.</small>
+      </div>
+
+      <div class="form-group">
+        <label for="executorModel">Executor model</label>
+        <select id="executorModel" name="executorModel">
+          <!-- Options loaded dynamically -->
+        </select>
+        <small>Model used for DOM automation / executor.</small>
+      </div>
+
+      <div class="form-group">
+        <button type="button" id="addModelBtn" class="btn btn-secondary">
+          Add new model
+        </button>
       </div>
 
       <div class="form-group">
@@ -160,7 +331,8 @@
           placeholder="Enter your API token"
           required
         />
-        <small>Enter your API token for the selected LLM provider</small>
+        <small>Enter the API token to use when a model does not define its own token.</small>
+        <button type="button" id="testBtn" class="btn btn-secondary" style="margin-top: 10px;">Test Connection</button>
       </div>
 
       <div class="form-group">
@@ -190,9 +362,68 @@
         <small>Controls randomness: 0 = focused, 2 = creative (0-2)</small>
       </div>
 
+      <div class="settings-header" style="margin-top: 40px; margin-bottom: 20px;">
+        <h1>MCP Servers</h1>
+        <p>Manage Model Context Protocol servers</p>
+      </div>
+
+      <div id="mcp-servers-list" class="mcp-list">
+        <!-- MCP servers will be rendered here -->
+      </div>
+
+      <div class="mcp-add-form">
+        <h3 id="mcpFormTitle">Add New Server</h3>
+        <div class="form-group">
+          <label for="mcpName">Name</label>
+          <input type="text" id="mcpName" placeholder="Server Name" />
+        </div>
+        <div class="form-group">
+          <label for="mcpType">Type</label>
+          <select id="mcpType">
+            <option value="sse">HTTP (SSE)</option>
+            <option value="websocket">WebSocket</option>
+          </select>
+        </div>
+        
+        <div id="mcpConnectionFields">
+          <div class="form-group">
+            <label for="mcpUrl">Server URL</label>
+            <input type="text" id="mcpUrl" placeholder="http://localhost:3000/sse" />
+          </div>
+        </div>
+
+        <div id="mcpAuthSection" style="border-top: 1px solid #eee; padding-top: 15px; margin-top: 15px;">
+          <h4 style="margin: 0 0 10px 0; font-size: 14px;">Authentication</h4>
+          
+          <div class="form-group">
+            <label for="mcpAuthType">Method</label>
+            <select id="mcpAuthType">
+              <option value="none">None</option>
+              <option value="header">Custom Header (API Key / Bearer)</option>
+            </select>
+          </div>
+
+          <div id="mcpAuthHeaderFields" style="display: none;">
+            <div class="form-group">
+              <label for="mcpAuthHeaderName">Header Name</label>
+              <input type="text" id="mcpAuthHeaderName" placeholder="Authorization" />
+            </div>
+            <div class="form-group">
+              <label for="mcpAuthHeaderValue">Header Value</label>
+              <input type="password" id="mcpAuthHeaderValue" placeholder="Bearer sk-..." />
+            </div>
+          </div>
+        </div>
+
+        <div class="form-actions" style="margin-top: 15px; display: flex; gap: 10px;">
+          <button type="button" id="addMcpBtn" class="btn btn-secondary">Add Server</button>
+          <button type="button" id="cancelMcpBtn" class="btn btn-secondary" style="background-color: #6c757d; display: none;">Cancel</button>
+        </div>
+      </div>
+      </div>
+
       <div class="settings-actions">
         <button type="submit" class="btn btn-primary">Save Settings</button>
-        <button type="button" id="testBtn" class="btn btn-secondary">Test Connection</button>
       </div>
 
       <div id="statusMessage" class="status-message"></div>
@@ -200,6 +431,6 @@
   </div>
 
   <script type="module" src="../lib/llm-client.js"></script>
-  <script type="module" src="settings.js"></script>
+  <script type="module" src="../settings/settings.js"></script>
 </body>
 </html>
