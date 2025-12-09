@@ -181,3 +181,29 @@ VALID JSON OUTPUT (notice: navigation IS needed since not on YouTube):
     }
   ]
 }
+
+EXAMPLE 2:
+USER PROMPT: "party"
+
+VALID JSON OUTPUT:
+{
+  "actions": [
+    {
+      "action": "showFireworks",
+      "description": "Show fireworks and balloons celebration animation on the page"
+    }
+  ]
+}
+
+EXAMPLE 3:
+USER PROMPT: "translate this page to Spanish"
+
+VALID JSON OUTPUT:
+{
+  "actions": [
+    {
+      "action": "translate",
+      "description": "Translate the current page to Spanish"
+    }
+  ]
+}

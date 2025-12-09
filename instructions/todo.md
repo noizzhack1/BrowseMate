@@ -5,16 +5,17 @@
 - [ ]  After each execute check plan again and update by the screen
 - [ ]  Add MCP Client capabilities
 - [ ]  Error handling
-- [x]  Expand Actions:
-    - [x]  Click (button, url, video, image)
-    - [x]  Scroll
-    - [x]  Focus
-    - [x]  Fill
-    - [x]  OpenTab
-    - [x]  ChangeTab
-    - [x]  drag
-    - [x]  Wait For
-    - [x]  Zoom
-    - [x]  Press Enter After fill search
-    - [x]  Upload file
+- [ ]  Expand Actions:
+    - [ ]  Click (button, url, video, image)
+    - [ ]  Scroll
+    - [ ]  Focus
+    - [ ]  Fill
+    - [ ]  OpenTab
+    - [ ]  ChangeTab
+    - [ ]  drag
+    - [ ]  Wait For
+    - [ ]  Zoom
+    - [ ]  Press Enter After fill search
+    - [ ]  Upload file (?)
+    - [x]  Translate page
 - [ ]  Support for history fetch

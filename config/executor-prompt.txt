@@ -78,6 +78,11 @@ Tool Selection Strategy:
    - Use check for checkboxes
    - Use fillAndSubmit for search boxes that submit on Enter (but prefer findSearchInput for major sites)
 
+5. For celebration/party/fireworks actions:
+   - Action mentions celebration, party, fireworks → use showFireworks
+   - The showFireworks tool displays animated fireworks and balloons
+   - Optional: specify duration parameter in milliseconds (default: 2000)
+
 Analyzing Page Context:
 - Look at the HTML to identify actual selectors, IDs, classes
 - Look for common patterns (e.g., input[type="search"], button with specific text)
