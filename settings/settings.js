@@ -28,7 +28,7 @@ const DEFAULT_SETTINGS = {
   // New planner / executor model fields (used going forward)
   plannerModel: '',
   executorModel: '',
-  maxTokens: 1024,
+  maxTokens: 2000,
   temperature: 0.7,
   mcpServers: null // Changed from [] to null to detect if set
 };

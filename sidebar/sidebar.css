@@ -162,8 +162,37 @@ button {
   gap: 6px;
 }
 
-.message {
+/* Wrapper for message and icons */
+.message-wrapper {
   max-width: 85%;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 6px;
+  margin-bottom: 8px;
+  position: relative;
+  /* Ensure the entire wrapper area is hoverable */
+  cursor: default;
+}
+
+/* Ensure hover works for both user and assistant messages */
+.message-wrapper--user,
+.message-wrapper--assistant {
+  position: relative;
+}
+
+.message-wrapper--assistant {
+  margin-right: auto;
+}
+
+.message-wrapper--user {
+  margin-left: auto;
+  margin-right: 0;
+  flex-direction: row-reverse;
+}
+
+
+.message {
   padding: 8px 10px;
   border-radius: 12px;
   font-size: 12px;
@@ -171,17 +200,191 @@ button {
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.16);
   word-wrap: break-word;
   white-space: pre-wrap;
+  position: relative;
+  z-index: 1; /* Ensure message is above icons when needed */
 }
 
+.message__body ul,
+.message__body ol {
+  margin: 4px 0;
+  padding-left: 20px;
+}
+
+.message__body li {
+  margin: 2px 0;
+}
+
+.message__body strong {
+  font-weight: 600;
+}
+
+.message__body em {
+  font-style: italic;
+}
+
+/* Icons wrapper - outside message border, at the end */
+.message__icons {
+  display: flex !important; /* Always in layout to prevent shifts */
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  min-height: 20px; /* Prevent layout shift when feedback appears */
+  min-width: 24px; /* Ensure hover area is detectable */
+  opacity: 0; /* Hidden by default */
+  visibility: visible; /* Keep visible for hover detection */
+  transition: opacity 0.2s ease;
+  pointer-events: none; /* Disable interaction when hidden */
+  position: relative;
+  z-index: 10; /* Higher z-index to ensure visibility */
+}
+
+/* Show icons on hover - UNIFIED RULE FOR ALL MESSAGE TYPES */
+.message-wrapper:hover .message__icons {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  visibility: visible !important;
+}
+
+/* Also show when hovering directly on the message bubble */
+.message-wrapper .message:hover ~ .message__icons {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  visibility: visible !important;
+}
+
+/* CRITICAL: Specific rules for user messages - multiple selectors for reliability */
+.message-wrapper--user:hover .message__icons,
+.message-wrapper.message-wrapper--user:hover .message__icons,
+.message-wrapper--user .message:hover ~ .message__icons,
+.message-wrapper--user:hover > .message__icons,
+.message-wrapper--user .message--user:hover ~ .message__icons,
+.message--user:hover ~ .message__icons {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  visibility: visible !important;
+}
+
+/* Specific rules for assistant messages */
+.message-wrapper--assistant:hover .message__icons,
+.message-wrapper.message-wrapper--assistant:hover .message__icons,
+.message-wrapper--assistant .message:hover ~ .message__icons {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  visibility: visible !important;
+}
+
+/* Hide icons if message body is empty */
+.message-wrapper:has(.message__body:empty) .message__icons {
+  display: none !important;
+  opacity: 0 !important;
+}
+
+/* Icon button styles */
+.message__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  margin: 0;
+  color: #6b7280;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.2s ease, background-color 0.2s ease;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.message-wrapper--user .message__icon {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.message-wrapper--assistant .message__icon {
+  color: #6b7280;
+}
+
+.message__icon:hover {
+  color: #2563eb;
+  background-color: rgba(37, 99, 235, 0.1);
+}
+
+.message-wrapper--user .message__icon:hover {
+  color: rgba(255, 255, 255, 0.9);
+  background-color: rgba(255, 255, 255, 0.15);
+}
+
+.message__icon:active {
+  opacity: 0.7;
+  transform: scale(0.95);
+}
+
+.message__icon svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+  color: #6b7280;
+}
+
+/* Edit mode styles */
+.message__body[contenteditable="true"] {
+  outline: none !important;
+  cursor: text;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.message__body[contenteditable="true"]:focus {
+  outline: none !important;
+}
+
+/* Save and Cancel button specific styles */
+.message__icon--save {
+  color: #10b981 !important;
+}
+
+.message__icon--save:hover {
+  color: #059669 !important;
+  background-color: rgba(16, 185, 129, 0.1) !important;
+}
+
+.message-wrapper--user .message__icon--save {
+  color: rgba(16, 185, 129, 0.9) !important;
+}
+
+.message-wrapper--user .message__icon--save:hover {
+  color: #10b981 !important;
+  background-color: rgba(16, 185, 129, 0.2) !important;
+}
+
+.message__icon--cancel {
+  color: #ef4444 !important;
+}
+
+.message__icon--cancel:hover {
+  color: #dc2626 !important;
+  background-color: rgba(239, 68, 68, 0.1) !important;
+}
+
+.message-wrapper--user .message__icon--cancel {
+  color: rgba(239, 68, 68, 0.9) !important;
+}
+
+.message-wrapper--user .message__icon--cancel:hover {
+  color: #ef4444 !important;
+  background-color: rgba(239, 68, 68, 0.2) !important;
+}
+
+
 .message--assistant {
-  margin-right: auto;
   background: #ffffff;
   color: #111827;
   border-radius: 12px 12px 12px 4px;
 }
 
 .message--user {
-  margin-left: auto;
   background: #2563eb;
   color: #ffffff;
   border-radius: 12px 12px 4px 12px;

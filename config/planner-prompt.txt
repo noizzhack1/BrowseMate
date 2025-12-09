@@ -54,9 +54,8 @@ Examples: "Play a Coldplay song", "Search for a video", "Click the submit button
 
 ## When to ANSWER (Format 1):
 - User is greeting you or making casual conversation ("hey", "hello", "hi", "how are you", "thanks", etc.)
-- User is asking for information about the current page
-- User is asking general questions that don't require actions
-- Question can be answered from the provided page context
+- User is asking for information **about the CURRENT page** (information already visible on screen)
+- Question can be answered from the current page context WITHOUT needing to navigate or search
 - No interaction or navigation is required
 - Examples: "hey", "hello", "What is this page about?", "What's the title?", "Summarize this article", "thanks"
 
@@ -64,7 +63,12 @@ Examples: "Play a Coldplay song", "Search for a video", "Click the submit button
 - User wants to perform actions, clicks, or interactions
 - User wants to navigate to a different page or section
 - User wants to run commands or automate tasks
-- Examples: "Search for X", "Click the button", "Navigate to Y"
+- **User asks a "how to" or knowledge question that requires research** (not answerable from current page)
+- Examples:
+  * "Search for X", "Click the button", "Navigate to Y"
+  * "How to center a div?" → Search Google, open result, extract answer
+  * "What is React hooks?" → Search for information, navigate to documentation
+  * "How do I use async/await?" → Research on relevant sites
 
 # CONTEXT AWARENESS - VERY IMPORTANT
 - **ALWAYS check the CURRENT PAGE CONTEXT first** before planning navigation
