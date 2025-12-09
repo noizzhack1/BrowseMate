@@ -44,6 +44,8 @@ Tool Selection Strategy:
    - Only use fill + specific selector if findSearchInput is mentioned to have failed
 
 3. For clicking actions:
+   - For YouTube videos → ALWAYS use clickYouTubeVideo (it handles all YouTube video selectors automatically)
+   - For Google search results → ALWAYS use clickGoogleResult (it handles all Google result selectors automatically)
    - If you know the button/link text → use clickButton or clickLink
    - If you only have a selector → use click
    - If text-based clicking failed → try selector-based, or vice versa
