@@ -478,7 +478,7 @@ async function resendMessageAndReplace(editedText, userMessageWrapper, oldAssist
         progressWrapper.className = "message-wrapper";
         
         progressContainer = document.createElement("div");
-        progressContainer.className = "message message--assistant";
+        progressContainer.className = "message message--assistant bg-white text-slate-800 border border-slate-200";
         progressMessageEl = document.createElement("div");
         progressMessageEl.className = "message__body";
         progressContainer.appendChild(progressMessageEl);
@@ -1013,7 +1013,11 @@ function appendMessage(role, text, saveToMemory = true) {
   messageWrapper.className = `message-wrapper message-wrapper--${role}`;
 
   const container = document.createElement("div");
-  container.className = `message message--${role}`;
+  // Add Tailwind classes based on message role
+  const roleClasses = role === 'user'
+    ? 'bg-gradient-to-br from-purple-500 via-blue-500 to-cyan-500 text-white'
+    : 'bg-white text-slate-800 border border-slate-200';
+  container.className = `message message--${role} ${roleClasses}`;
 
   const body = document.createElement("div");
   body.className = "message__body";
@@ -1096,7 +1100,11 @@ function createStreamingMessage(role) {
   messageWrapper.className = `message-wrapper message-wrapper--${role}`;
 
   const container = document.createElement("div");
-  container.className = `message message--${role}`;
+  // Add Tailwind classes based on message role
+  const roleClasses = role === 'user'
+    ? 'bg-gradient-to-br from-purple-500 via-blue-500 to-cyan-500 text-white'
+    : 'bg-white text-slate-800 border border-slate-200';
+  container.className = `message message--${role} ${roleClasses}`;
 
   const body = document.createElement("div");
   body.className = "message__body";
@@ -1452,7 +1460,7 @@ async function handleChatSubmit(event) {
         progressWrapper.className = "message-wrapper";
         
         progressContainer = document.createElement("div");
-        progressContainer.className = "message message--assistant";
+        progressContainer.className = "message message--assistant bg-white text-slate-800 border border-slate-200";
         progressMessageEl = document.createElement("div");
         progressMessageEl.className = "message__body";
         progressContainer.appendChild(progressMessageEl);
