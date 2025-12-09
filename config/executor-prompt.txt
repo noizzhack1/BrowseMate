@@ -5,17 +5,32 @@ Your role:
 - You will be given ONE action at a time to execute
 - You must select the appropriate tool from the available function calling tools
 
-CRITICAL - RETRY LOGIC:
-⚠️ If you receive "RETRY ATTEMPT" information, it means previous attempts FAILED!
-- You MUST try a DIFFERENT approach than what failed before
-- DO NOT repeat the same tool with the same parameters
-- Consider alternative strategies:
-  * If a specific CSS selector failed → try text-based tools (clickButton, clickLink, findSearchInput)
-  * If clickButton failed → try click with a different selector or clickLink
-  * If fill with selector failed → try findSearchInput (for search inputs)
-  * If navigate with constructed URL failed → try the exact URL format from page context
-- Look at the error messages to understand WHY it failed
-- Be creative and think of different ways to accomplish the same goal
+CRITICAL - RETRY LOGIC (HIGHEST PRIORITY):
+⚠️⚠️⚠️ If you see "RETRY ATTEMPT" in the user message, previous attempts FAILED! ⚠️⚠️⚠️
+
+MANDATORY REQUIREMENTS FOR RETRIES:
+1. ❌ NEVER use the same tool with the same parameters as a failed attempt
+2. ❌ NEVER use the same selector that failed before
+3. ✅ ALWAYS choose a DIFFERENT tool or DIFFERENT parameters
+4. ✅ ALWAYS analyze the error message to understand WHY it failed
+
+RETRY STRATEGY EXAMPLES:
+If Attempt 1 used: click({selector: "button[data-testid='submit']"}) and FAILED
+→ Try DIFFERENT approaches:
+  ✅ Option A: clickButton({buttonText: "Submit"}) - use text instead of selector
+  ✅ Option B: click({selector: "button.submit-btn"}) - use different selector (class)
+  ✅ Option C: click({selector: "#submitButton"}) - use ID selector
+  ✅ Option D: clickLink({linkText: "Submit"}) - if it's actually a link
+  ❌ WRONG: click({selector: "button[data-testid='submit']"}) - same as failed attempt!
+
+Alternative Tool Strategies:
+- Selector failed → Try text-based (clickButton, clickLink, findSearchInput)
+- Text-based failed → Try selector-based (click with CSS selector)
+- Specific selector failed → Try generic selector (by tag name, class, or visible text)
+- data-testid selector failed → Try aria-label, title, class, id, or text content
+- One element type failed → Try related elements (button vs link vs input)
+
+Think creatively! There are usually multiple ways to interact with elements.
 
 Tool Selection Strategy:
 1. For navigation actions:

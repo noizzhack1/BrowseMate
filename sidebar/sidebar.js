@@ -24,6 +24,19 @@ const settingsBtn = document.getElementById("settingsBtn");
 const includePageContextCheckbox = document.getElementById("includePageContext");
 /** @type {HTMLDivElement | null} */
 const sidebarRootEl = document.querySelector(".sidebar-root");
+/** @type {HTMLButtonElement | null} */
+const chatStopBtn = document.getElementById("chatStop");
+/** @type {HTMLButtonElement | null} */
+const chatSendBtn = document.getElementById("chatSend");
+
+// =========================
+// Request cancellation state
+// =========================
+
+/** @type {AbortController | null} */
+let currentAbortController = null;
+/** @type {boolean} */
+let isRequestInProgress = false;
 
 // =========================
 // Page Context & Freeze helpers
@@ -192,9 +205,10 @@ function appendMessage(role, text) {
  * @param {string} userText
  * @param {boolean} includeContext
  * @param {Function} onProgress - Optional callback for progress updates
+ * @param {AbortSignal} abortSignal - Signal to cancel the request
  * @returns {Promise<string>}
  */
-async function callLLMAPI(userText, includeContext = false, onProgress = null) {
+async function callLLMAPI(userText, includeContext = false, onProgress = null, abortSignal = null) {
   console.log('[callLLMAPI] Starting LLM API call');
   console.log('[callLLMAPI] User text:', userText);
   console.log('[callLLMAPI] Include context:', includeContext);
@@ -218,8 +232,13 @@ async function callLLMAPI(userText, includeContext = false, onProgress = null) {
     // Use Task A orchestrator to process the request
     // Task A will determine if it's a question or action and route accordingly
     console.log('[callLLMAPI] Calling processRequest...');
-    const result = await processRequest(context, userText, onProgress);
+    const result = await processRequest(context, userText, onProgress, abortSignal);
     console.log('[callLLMAPI] ProcessRequest completed');
+    
+    // Check if request was aborted
+    if (abortSignal && abortSignal.aborted) {
+      throw new Error('Request cancelled by user');
+    }
     console.log('[callLLMAPI] Result type:', result.type);
     console.log('[callLLMAPI] Result:', result);
 
@@ -235,11 +254,9 @@ async function callLLMAPI(userText, includeContext = false, onProgress = null) {
       console.log('[callLLMAPI] Returning action result:', formattedMessage);
       return formattedMessage;
     } else if (result.type === 'execution') {
-      // Sequential execution completed - show task list
-      console.log('[callLLMAPI] Returning execution result with task list');
-      const header = result.message + '\n\n';
-      const taskList = result.taskList || 'No tasks to display';
-      return header + taskList;
+      // Sequential execution completed - show message only
+      console.log('[callLLMAPI] Returning execution result');
+      return result.message;
     } else if (result.type === 'plan') {
       // Plan created (old format backward compatibility)
       console.log('[callLLMAPI] Returning plan');
@@ -254,6 +271,11 @@ async function callLLMAPI(userText, includeContext = false, onProgress = null) {
     console.error('[callLLMAPI] Task A processing error:', error);
     console.error('[callLLMAPI] Error message:', error.message);
     console.error('[callLLMAPI] Error stack:', error.stack);
+
+    // Re-throw cancellation errors so they can be handled in handleChatSubmit
+    if (error.message === 'Request cancelled by user') {
+      throw error;
+    }
 
     if (error.message && error.message.includes('token')) {
       return "Please configure your API token in Settings (click ⚙️ button).";
@@ -291,6 +313,11 @@ async function handleChatSubmit(event) {
     return;
   }
 
+  // Prevent multiple simultaneous requests
+  if (isRequestInProgress) {
+    return;
+  }
+
   // Show user message
   appendMessage("user", value);
 
@@ -301,17 +328,37 @@ async function handleChatSubmit(event) {
   // Check if page context should be included
   const includeContext = includePageContextCheckbox?.checked || false;
 
-  // Freeze page and show loading indicator
-  await setPageFrozen(true);
+  // Create abort controller for this request
+  currentAbortController = new AbortController();
+  const abortSignal = currentAbortController.signal;
+  isRequestInProgress = true;
+
+  // Update UI: show Stop button, hide Send button
+  if (chatStopBtn) chatStopBtn.style.display = "inline-flex";
+  if (chatSendBtn) chatSendBtn.style.display = "none";
+
+  // Show loading indicator (but don't freeze page yet - only freeze when actions start)
   appendMessage("assistant", "Thinking...");
 
   let reply;
   let progressMessageEl = null;
   let progressContainer = null;
+  let isPageFrozen = false; // Track if we've frozen the page
 
   try {
     // Create a callback for progress updates
     const onProgress = (taskList, currentStep, totalSteps, status) => {
+      // Check if request was aborted
+      if (abortSignal.aborted) {
+        return;
+      }
+
+      // Freeze page when actions start (first time onProgress is called)
+      if (!isPageFrozen) {
+        setPageFrozen(true);
+        isPageFrozen = true;
+      }
+
       // Remove "Thinking..." message if still there
       if (chatMessagesEl && chatMessagesEl.lastChild) {
         const lastMsg = chatMessagesEl.lastChild.querySelector('.message__body');
@@ -338,10 +385,41 @@ async function handleChatSubmit(event) {
       chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
     };
 
-    reply = await callLLMAPI(value, includeContext, onProgress);
+    reply = await callLLMAPI(value, includeContext, onProgress, abortSignal);
+  } catch (error) {
+    // Handle cancellation gracefully
+    if (abortSignal.aborted || error.message === 'Request cancelled by user') {
+      // Remove "Thinking..." message if still there
+      if (chatMessagesEl && chatMessagesEl.lastChild) {
+        const lastMsg = chatMessagesEl.lastChild.querySelector('.message__body');
+        if (lastMsg && lastMsg.textContent === "Thinking...") {
+          chatMessagesEl.removeChild(chatMessagesEl.lastChild);
+        }
+      }
+      // Update progress message if it exists
+      if (progressMessageEl) {
+        progressMessageEl.textContent = "Got it. What next?";
+      } else {
+        appendMessage("assistant", "Got it. What next?");
+      }
+      reply = null; // Don't show error message for cancellation
+    } else {
+      // Re-throw other errors to be handled by existing error handling
+      throw error;
+    }
   } finally {
-    // Always unfreeze, even if the API errors
-    await setPageFrozen(false);
+    // Always unfreeze if we froze the page, even if the API errors
+    if (isPageFrozen) {
+      await setPageFrozen(false);
+    }
+    
+    // Reset request state
+    isRequestInProgress = false;
+    currentAbortController = null;
+    
+    // Update UI: hide Stop button, show Send button
+    if (chatStopBtn) chatStopBtn.style.display = "none";
+    if (chatSendBtn) chatSendBtn.style.display = "inline-flex";
   }
 
   // If we only showed "Thinking..." and no progress, remove it
@@ -400,6 +478,17 @@ function startNewChat() {
     "assistant",
     "Hi, I’m BrowseMate Chat living in your sidebar. Type a message below to start a conversation."
   );
+}
+
+/**
+ * Handle Stop button click - cancel the current request
+ */
+function handleStopClick() {
+  if (currentAbortController && isRequestInProgress) {
+    // Abort the current request
+    currentAbortController.abort();
+    console.log('[handleStopClick] Request cancelled by user');
+  }
 }
 
 /**
@@ -498,6 +587,10 @@ function initChat() {
 
   if (settingsBtn) {
     settingsBtn.addEventListener("click", toggleSettings);
+  }
+
+  if (chatStopBtn) {
+    chatStopBtn.addEventListener("click", handleStopClick);
   }
 }
 
