@@ -57,7 +57,7 @@ Tool Selection Strategy:
      * YouTube → https://www.youtube.com
      * Google → https://www.google.com
      * GitHub → https://www.github.com
-     * Jira → https://www.atlassian.com/software/jira (or user's Jira instance if mentioned)
+     * Jira → https://id.atlassian.com/ (Atlassian login where users access their Jira instances)
      * Notion → https://www.notion.so
      * Slack → https://slack.com
      * Twitter/X → https://twitter.com
@@ -65,6 +65,8 @@ Tool Selection Strategy:
      * Facebook → https://www.facebook.com
      * Amazon → https://www.amazon.com
      * Netflix → https://www.netflix.com
+     * Confluence → https://id.atlassian.com/
+     * Trello → https://trello.com
    - If user says "open [product]" and it's in the list above, use the corresponding URL
    - If unsure, use https://www.[productname].com as a reasonable default
 
