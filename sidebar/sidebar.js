@@ -208,6 +208,331 @@ async function setPageFrozen(freeze) {
 // =========================
 
 /**
+ * Find the next assistant message wrapper after a given user message wrapper
+ * @param {HTMLElement} userMessageWrapper - The user message wrapper element
+ * @returns {HTMLElement | null} The next assistant message wrapper, or null if not found
+ */
+function findNextAssistantMessage(userMessageWrapper) {
+  if (!userMessageWrapper || !chatMessagesEl) return null;
+  
+  // Get all message wrappers
+  const allWrappers = Array.from(chatMessagesEl.children);
+  const currentIndex = allWrappers.indexOf(userMessageWrapper);
+  
+  if (currentIndex === -1) return null;
+  
+  // Look for the next assistant message
+  for (let i = currentIndex + 1; i < allWrappers.length; i++) {
+    const wrapper = allWrappers[i];
+    if (wrapper.classList.contains('message-wrapper--assistant')) {
+      return wrapper;
+    }
+    // Stop if we hit another user message (means no assistant response yet)
+    if (wrapper.classList.contains('message-wrapper--user')) {
+      return null;
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Remove a message and its associated memory entry
+ * @param {HTMLElement} messageWrapper - The message wrapper to remove
+ * @param {string} role - The role of the message ('user' or 'assistant')
+ * @param {string} content - The content of the message to remove from memory
+ */
+async function removeMessageAndMemory(messageWrapper, role, content) {
+  // Remove from DOM
+  if (messageWrapper && messageWrapper.parentNode) {
+    messageWrapper.parentNode.removeChild(messageWrapper);
+  }
+  
+  // Remove from memory if memory manager is available
+  if (memoryManager && content) {
+    try {
+      // Get all messages
+      const allMessages = memoryManager.getAllMessages();
+      // Find and remove the matching message
+      const index = allMessages.findIndex(msg => 
+        msg.role === role && msg.content === content
+      );
+      if (index !== -1) {
+        // Remove from array
+        allMessages.splice(index, 1);
+        // Save back to storage
+        await memoryManager.save();
+        console.log(`[removeMessageAndMemory] Removed ${role} message from memory`);
+      }
+    } catch (error) {
+      console.error('[removeMessageAndMemory] Failed to remove from memory:', error);
+    }
+  }
+}
+
+/**
+ * Resend a user message and replace the assistant response
+ * @param {string} editedText - The edited user message text
+ * @param {HTMLElement} userMessageWrapper - The user message wrapper element
+ * @param {HTMLElement} oldAssistantWrapper - The old assistant message wrapper to replace
+ * @param {string} oldUserContent - The original user message content (before editing) for memory removal
+ */
+async function resendMessageAndReplace(editedText, userMessageWrapper, oldAssistantWrapper, oldUserContent = '') {
+  if (!chatMessagesEl || isRequestInProgress) {
+    console.warn('[resendMessageAndReplace] Cannot resend: chat not ready or request in progress');
+    return;
+  }
+  
+  // If oldUserContent not provided, try to get it from the message body
+  // (though it should already be updated with new text at this point)
+  if (!oldUserContent) {
+    const userBody = userMessageWrapper.querySelector('.message__body');
+    oldUserContent = userBody ? (userBody.textContent || userBody.innerText || '') : '';
+  }
+  
+  let oldAssistantContent = '';
+  if (oldAssistantWrapper) {
+    const oldBody = oldAssistantWrapper.querySelector('.message__body');
+    if (oldBody) {
+      oldAssistantContent = oldBody.textContent || oldBody.innerText || '';
+    }
+  }
+  
+  // Remove old messages from memory in reverse order (assistant first, then user)
+  // This ensures we remove the correct pair even if there are duplicate messages
+  if (memoryManager) {
+    try {
+      const allMessages = memoryManager.getAllMessages();
+      
+      // Find and remove assistant message first (search from end to find the most recent match)
+      if (oldAssistantContent) {
+        for (let i = allMessages.length - 1; i >= 0; i--) {
+          if (allMessages[i].role === 'assistant' && allMessages[i].content === oldAssistantContent) {
+            allMessages.splice(i, 1);
+            console.log('[resendMessageAndReplace] Removed assistant message from memory');
+            break; // Only remove the first (most recent) match
+          }
+        }
+      }
+      
+      // Find and remove user message (search from end to find the most recent match)
+      if (oldUserContent) {
+        for (let i = allMessages.length - 1; i >= 0; i--) {
+          if (allMessages[i].role === 'user' && allMessages[i].content === oldUserContent) {
+            allMessages.splice(i, 1);
+            console.log('[resendMessageAndReplace] Removed user message from memory');
+            break; // Only remove the first (most recent) match
+          }
+        }
+      }
+      
+      // Save updated messages
+      await memoryManager.save();
+    } catch (error) {
+      console.error('[resendMessageAndReplace] Failed to remove messages from memory:', error);
+    }
+  }
+  
+  // Remove old assistant message from DOM
+  if (oldAssistantWrapper) {
+    oldAssistantWrapper.remove();
+  }
+  
+  // Prevent multiple simultaneous requests
+  isRequestInProgress = true;
+  
+  // Create abort controller for this request
+  currentAbortController = new AbortController();
+  const abortSignal = currentAbortController.signal;
+  
+  // Update UI: show Stop button, hide Send button
+  if (chatStopBtn) chatStopBtn.style.display = "inline-flex";
+  if (chatSendBtn) chatSendBtn.style.display = "none";
+  
+  // Show loading indicator
+  appendMessage("assistant", "Thinking...", false);
+  
+  let reply;
+  let progressMessageEl = null;
+  let progressContainer = null;
+  let streamingMessageEl = null;
+  let isPageFrozen = false;
+  
+  try {
+    // Check if page context should be included
+    const includeContext = includePageContextCheckbox?.checked || false;
+    
+    // Create callbacks (same as handleChatSubmit)
+    const onStreamChunk = (chunk) => {
+      if (abortSignal.aborted) return;
+      
+      if (chatMessagesEl && chatMessagesEl.lastChild) {
+        const lastMsg = chatMessagesEl.lastChild.querySelector('.message__body');
+        if (lastMsg && lastMsg.textContent === "Thinking...") {
+          chatMessagesEl.removeChild(chatMessagesEl.lastChild);
+        }
+      }
+      
+      if (!streamingMessageEl) {
+        const streamingMsg = createStreamingMessage("assistant");
+        if (streamingMsg) {
+          streamingMessageEl = streamingMsg.body;
+        }
+      }
+      
+      if (streamingMessageEl) {
+        updateStreamingMessage(streamingMessageEl, chunk, true);
+      }
+    };
+    
+    const onProgress = (taskList, currentStep, totalSteps, status) => {
+      if (abortSignal.aborted) return;
+      
+      if (!isPageFrozen) {
+        setPageFrozen(true);
+        isPageFrozen = true;
+      }
+      
+      if (chatMessagesEl && chatMessagesEl.lastChild) {
+        const lastMsg = chatMessagesEl.lastChild.querySelector('.message__body');
+        if (lastMsg && lastMsg.textContent === "Thinking...") {
+          chatMessagesEl.removeChild(chatMessagesEl.lastChild);
+        }
+      }
+      
+      if (!progressMessageEl) {
+        const progressWrapper = document.createElement("div");
+        progressWrapper.className = "message-wrapper";
+        
+        progressContainer = document.createElement("div");
+        progressContainer.className = "message message--assistant";
+        progressMessageEl = document.createElement("div");
+        progressMessageEl.className = "message__body";
+        progressContainer.appendChild(progressMessageEl);
+        
+        progressWrapper.appendChild(progressContainer);
+        
+        const iconsWrapper = createMessageIcons(progressContainer, progressMessageEl, "assistant", null);
+        progressWrapper.appendChild(iconsWrapper);
+        
+        chatMessagesEl.appendChild(progressWrapper);
+      }
+      
+      const header = `Executing actions (${currentStep}/${totalSteps})...\n\n`;
+      progressMessageEl.textContent = header + taskList;
+      
+      chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+    };
+    
+    const onInteraction = async (question) => {
+      console.log('[resendMessageAndReplace] onInteraction called with question:', question);
+      
+      if (isPageFrozen) {
+        await setPageFrozen(false);
+      }
+      
+      appendMessage("assistant", question);
+      
+      return new Promise((resolve) => {
+        const handleInteractionResponse = async (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          
+          if (!chatInputEl) {
+            resolve('');
+            return;
+          }
+          
+          const response = chatInputEl.value.trim();
+          if (!response) {
+            return;
+          }
+          
+          console.log('[resendMessageAndReplace] User response:', response);
+          
+          appendMessage("user", response);
+          
+          chatInputEl.value = "";
+          autoResizeTextArea(chatInputEl);
+          
+          chatFormEl.removeEventListener("submit", handleInteractionResponse);
+          chatFormEl.addEventListener("submit", handleChatSubmit);
+          
+          if (!isPageFrozen) {
+            await setPageFrozen(true);
+            isPageFrozen = true;
+          }
+          
+          resolve(response);
+        };
+        
+        chatFormEl.removeEventListener("submit", handleChatSubmit);
+        chatFormEl.addEventListener("submit", handleInteractionResponse);
+      });
+    };
+    
+    // Call LLM API with edited text
+    reply = await callLLMAPI(editedText, includeContext, onProgress, abortSignal, onInteraction);
+  } catch (error) {
+    if (abortSignal.aborted || error.message === 'Request cancelled by user') {
+      if (chatMessagesEl && chatMessagesEl.lastChild) {
+        const lastMsg = chatMessagesEl.lastChild.querySelector('.message__body');
+        if (lastMsg && lastMsg.textContent === "Thinking...") {
+          chatMessagesEl.removeChild(chatMessagesEl.lastChild);
+        }
+      }
+      if (progressMessageEl) {
+        progressMessageEl.textContent = "Got it. What next?";
+        if (memoryManager) {
+          memoryManager.addMessage("assistant", "Got it. What next?").catch(console.error);
+        }
+      } else {
+        appendMessage("assistant", "Got it. What next?");
+      }
+      reply = null;
+    } else {
+      throw error;
+    }
+  } finally {
+    if (isPageFrozen) {
+      await setPageFrozen(false);
+    }
+    
+    isRequestInProgress = false;
+    currentAbortController = null;
+    
+    if (chatStopBtn) chatStopBtn.style.display = "none";
+    if (chatSendBtn) chatSendBtn.style.display = "inline-flex";
+  }
+  
+  // Clean up "Thinking..." message
+  if (!progressMessageEl && !streamingMessageEl && chatMessagesEl && chatMessagesEl.lastChild) {
+    const lastMsg = chatMessagesEl.lastChild.querySelector('.message__body');
+    if (lastMsg && lastMsg.textContent === "Thinking...") {
+      chatMessagesEl.removeChild(chatMessagesEl.lastChild);
+    }
+  }
+  
+  // Update or create assistant response
+  if (progressMessageEl && reply && reply.trim()) {
+    progressMessageEl.textContent = reply;
+    if (memoryManager) {
+      memoryManager.addMessage("assistant", reply).catch(error => {
+        console.error('[resendMessageAndReplace] Failed to save assistant reply to memory:', error);
+      });
+    }
+  } else if (streamingMessageEl) {
+    if (memoryManager && reply && reply.trim()) {
+      memoryManager.addMessage("assistant", reply).catch(error => {
+        console.error('[resendMessageAndReplace] Failed to save streaming reply to memory:', error);
+      });
+    }
+  } else if (reply && reply.trim()) {
+    appendMessage("assistant", reply);
+  }
+}
+
+/**
  * Create copy and edit icons for a message (shown on hover, at the end of message)
  * @param {HTMLElement} container - The message container element
  * @param {HTMLElement} body - The message body element (for getting text)
@@ -327,12 +652,12 @@ function createMessageIcons(container, body, role, originalText = null) {
     let isEditing = false;
     let savedOriginalText = originalText;
     
-    // Create Save and Cancel buttons (initially hidden)
+    // Create Save & Resend and Cancel buttons (initially hidden)
     const saveBtn = document.createElement("button");
     saveBtn.className = "message__icon message__icon--save";
     saveBtn.type = "button";
-    saveBtn.setAttribute("aria-label", "Save changes");
-    saveBtn.title = "Save";
+    saveBtn.setAttribute("aria-label", "Save and resend message");
+    saveBtn.title = "Save & Resend";
     saveBtn.innerHTML = `<svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" width="14" height="14"><path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z" fill="currentColor"/></svg>`;
     saveBtn.style.display = 'none';
     
@@ -400,22 +725,46 @@ function createMessageIcons(container, body, role, originalText = null) {
       cancelBtn.style.display = 'none';
     };
     
-    // Function to save changes
-    const saveChanges = () => {
+    // Function to save changes and resend
+    const saveAndResend = async () => {
       const newText = body.textContent || body.innerText || '';
       const trimmedText = newText.trim();
       
-      if (trimmedText) {
-        // Update the message content
-        body.textContent = trimmedText;
-        // Update saved original text for future edits
-        savedOriginalText = trimmedText;
-      } else {
-        // If empty, restore original
+      if (!trimmedText) {
+        // If empty, restore original and don't resend
         body.textContent = savedOriginalText;
+        exitEditMode();
+        return;
       }
       
+      // Get the old content BEFORE updating (for memory removal)
+      const oldUserContent = savedOriginalText;
+      
+      // Update the message content in place
+      body.textContent = trimmedText;
+      // Update saved original text for future edits
+      savedOriginalText = trimmedText;
+      
+      // Exit edit mode first
       exitEditMode();
+      
+      // Find the message wrapper (parent of container)
+      let messageWrapper = container.parentElement;
+      if (!messageWrapper || !messageWrapper.classList.contains('message-wrapper')) {
+        messageWrapper = container.closest('.message-wrapper');
+      }
+      
+      if (!messageWrapper) {
+        console.error('[saveAndResend] Could not find message wrapper');
+        return;
+      }
+      
+      // Find the next assistant message to replace
+      const nextAssistantWrapper = findNextAssistantMessage(messageWrapper);
+      
+      // Resend the message and replace the assistant response
+      // Pass oldUserContent so memory removal can find the correct message
+      await resendMessageAndReplace(trimmedText, messageWrapper, nextAssistantWrapper, oldUserContent);
     };
     
     // Function to cancel editing
@@ -432,11 +781,11 @@ function createMessageIcons(container, body, role, originalText = null) {
       enterEditMode();
     });
     
-    // Save button click handler
-    saveBtn.addEventListener("click", (e) => {
+    // Save & Resend button click handler
+    saveBtn.addEventListener("click", async (e) => {
       e.stopPropagation();
       e.preventDefault();
-      saveChanges();
+      await saveAndResend();
     });
     
     // Cancel button click handler
@@ -446,13 +795,13 @@ function createMessageIcons(container, body, role, originalText = null) {
       cancelEditing();
     });
     
-    // Handle Enter key to save, Escape to cancel
-    body.addEventListener("keydown", (e) => {
+    // Handle Enter key to save & resend, Escape to cancel
+    body.addEventListener("keydown", async (e) => {
       if (!isEditing) return;
       
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        saveChanges();
+        await saveAndResend();
       } else if (e.key === 'Escape') {
         e.preventDefault();
         cancelEditing();
@@ -1220,6 +1569,7 @@ function handleMemoryStatsClick() {
     alert('Memory manager not initialized');
     return;
   }
+  alert(memoryManager.getAllMessages())
 
   try {
     const stats = memoryManager.getStats();
