@@ -6,6 +6,7 @@
 - [ ]  Add MCP Client capabilities
 - [ ]  Error handling
 <<<<<<< HEAD
+<<<<<<< HEAD
 - [ ]  Expand Actions:
     - [ ]  Click (button, url, video, image)
     - [ ]  Scroll
@@ -20,6 +21,8 @@
     - [ ]  Upload file (?)
     - [x]  Translate page
 =======
+=======
+>>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
 - [x]  Expand Actions:
     - [x]  Click (button, url, video, image)
     - [x]  Scroll
@@ -32,5 +35,8 @@
     - [x]  Zoom
     - [x]  Press Enter After fill search
     - [x]  Upload file
+<<<<<<< HEAD
+>>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
+=======
 >>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
 - [ ]  Support for history fetch

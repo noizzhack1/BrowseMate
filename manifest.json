@@ -37,6 +37,7 @@
   "web_accessible_resources": [
     {
 <<<<<<< HEAD
+<<<<<<< HEAD
       "resources": [
         "lib/llm-config.json",
         "lib/llm-client.js",
@@ -44,6 +45,9 @@
         "config/*",
         "settings/*"
       ],
+=======
+      "resources": ["lib/llm-config.json,config/*,settings/*"],
+>>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
 =======
       "resources": ["lib/llm-config.json,config/*,settings/*"],
 >>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2

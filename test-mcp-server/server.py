@@ -23,6 +23,7 @@ def add(a: int, b: int) -> int:
 
 @mcp.tool()
 <<<<<<< HEAD
+<<<<<<< HEAD
 def divide(x: int, y: int) -> int:
     """Divide x by y"""
     logger.info(f"=== TOOL CALLED: divide ===")
@@ -34,6 +35,8 @@ def divide(x: int, y: int) -> int:
 
     
 @mcp.tool()
+=======
+>>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
 =======
 >>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
 def echo(message: str) -> str:

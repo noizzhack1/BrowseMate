@@ -11,6 +11,7 @@ chrome.runtime.onInstalled.addListener(() => {
 // Messages:
 // - "open-sidepanel" from content.js → opens the side panel.
 <<<<<<< HEAD
+<<<<<<< HEAD
 // - "TRANSLATE_PAGE" from action-executor.js → translates the page content
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('[background] Received message:', message);
@@ -19,10 +20,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // - { type: 'BROWSEMATE_CLOSE_SETTINGS' } → close Settings tab(s) and restore original tab.
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 >>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
+=======
+// - { type: 'BROWSEMATE_CLOSE_SETTINGS' } → close Settings tab(s) and restore original tab.
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+>>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
   if (message === "open-sidepanel") {
     if (sender.tab && sender.tab.windowId !== undefined) {
       chrome.sidePanel.open({ windowId: sender.tab.windowId }).catch(() => {});
     }
+<<<<<<< HEAD
 <<<<<<< HEAD
   } else if (message.type === "TRANSLATE_PAGE") {
     console.log('[background] TRANSLATE_PAGE message received');
@@ -52,6 +58,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       });
     return true; // Keep the message channel open for async response
 =======
+=======
+>>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
     return;
   }
 
@@ -88,6 +96,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
     })();
     return true; // keep message channel open for async sendResponse
+<<<<<<< HEAD
+>>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
+=======
 >>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
   }
 });

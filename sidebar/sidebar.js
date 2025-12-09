@@ -129,6 +129,7 @@ async function setPageFrozen(freeze) {
     if (!tab || !tab.id) return;
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     // Skip freezing for protected browser pages
     // Chrome doesn't allow script injection into these pages
     if (tab.url && (tab.url.startsWith('chrome://') ||
@@ -136,6 +137,11 @@ async function setPageFrozen(freeze) {
                     tab.url.startsWith('edge://') ||
                     tab.url.startsWith('about:'))) {
       console.warn('[setPageFrozen] Cannot freeze protected page:', tab.url);
+=======
+    // Skip freezing for extension pages (chrome-extension:// URLs)
+    // Chrome doesn't allow script injection into extension pages
+    if (tab.url && tab.url.startsWith('chrome-extension://')) {
+>>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
 =======
     // Skip freezing for extension pages (chrome-extension:// URLs)
     // Chrome doesn't allow script injection into extension pages
@@ -351,15 +357,21 @@ async function callLLMAPI(userText, includeContext = false, onProgress = null, a
       return formattedMessage;
     } else if (result.type === 'execution') {
 <<<<<<< HEAD
+<<<<<<< HEAD
       // Sequential execution completed - show message only
       console.log('[callLLMAPI] Returning execution result');
       return result.message;
 =======
+=======
+>>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
       // Sequential execution completed - show task list
       console.log('[callLLMAPI] Returning execution result with task list');
       const header = result.message + '\n\n';
       const taskList = result.taskList || 'No tasks to display';
       return header + taskList;
+<<<<<<< HEAD
+>>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
+=======
 >>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
     } else if (result.type === 'plan') {
       // Plan created (old format backward compatibility)
@@ -449,13 +461,17 @@ async function handleChatSubmit(event) {
   let progressMessageEl = null;
   let progressContainer = null;
 <<<<<<< HEAD
+<<<<<<< HEAD
   let isPageFrozen = false; // Track if we've frozen the page
+=======
+>>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
 =======
 >>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
 
   try {
     // Create a callback for progress updates
     const onProgress = (taskList, currentStep, totalSteps, status) => {
+<<<<<<< HEAD
 <<<<<<< HEAD
       // Check if request was aborted
       if (abortSignal.aborted) {
@@ -468,6 +484,8 @@ async function handleChatSubmit(event) {
         isPageFrozen = true;
       }
 
+=======
+>>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
 =======
 >>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
       // Remove "Thinking..." message if still there
@@ -549,12 +567,15 @@ async function handleChatSubmit(event) {
   if (progressMessageEl && reply && reply.trim()) {
     progressMessageEl.textContent = reply;
 <<<<<<< HEAD
+<<<<<<< HEAD
     // Save the final reply to memory
     if (memoryManager) {
       memoryManager.addMessage("assistant", reply).catch(error => {
         console.error('[handleChatSubmit] Failed to save assistant reply to memory:', error);
       });
     }
+=======
+>>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
 =======
 >>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
   } else if (reply && reply.trim()) {
@@ -587,6 +608,7 @@ function toggleChatPanel() {
  * Start a brand-new chat session:
  * - Clear all existing messages
 <<<<<<< HEAD
+<<<<<<< HEAD
  * - Clear conversation history from memory
  * - Reset the input field
  * - Show the initial welcome message again
@@ -611,6 +633,12 @@ async function startNewChat() {
  */
 function startNewChat() {
 >>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
+=======
+ * - Reset the input field
+ * - Show the initial welcome message again
+ */
+function startNewChat() {
+>>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
   if (chatMessagesEl) {
     chatMessagesEl.innerHTML = "";
   }
@@ -619,6 +647,7 @@ function startNewChat() {
     autoResizeTextArea(chatInputEl);
   }
 
+<<<<<<< HEAD
 <<<<<<< HEAD
   // Show welcome message (and save to memory)
   appendMessage(
@@ -629,10 +658,16 @@ function startNewChat() {
     "assistant",
     "Hi, I’m BrowseMate Chat living in your sidebar. Type a message below to start a conversation."
 >>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
+=======
+  appendMessage(
+    "assistant",
+    "Hi, I’m BrowseMate Chat living in your sidebar. Type a message below to start a conversation."
+>>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
   );
 }
 
 /**
+<<<<<<< HEAD
 <<<<<<< HEAD
  * Handle Stop button click - cancel the current request
  */
@@ -684,6 +719,8 @@ Use "New Chat" button to clear conversation history.`;
 }
 
 /**
+=======
+>>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
 =======
 >>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
  * Toggle the Settings page as a separate tab.
@@ -796,6 +833,7 @@ async function initChat() {
   if (settingsBtn) {
     settingsBtn.addEventListener("click", toggleSettings);
 <<<<<<< HEAD
+<<<<<<< HEAD
   }
 
   if (chatStopBtn) {
@@ -804,6 +842,8 @@ async function initChat() {
 
   if (memoryStatsBtn) {
     memoryStatsBtn.addEventListener("click", handleMemoryStatsClick);
+=======
+>>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
 =======
 >>>>>>> 8cb838b821c7fc636a407753965378630f2d30f2
   }
