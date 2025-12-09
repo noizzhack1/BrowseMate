@@ -71,7 +71,7 @@ async function getPageContext() {
                     tab.url.startsWith('chrome-extension://') ||
                     tab.url.startsWith('edge://') ||
                     tab.url.startsWith('about:'))) {
-      console.warn('[getPageContext] Cannot inject scripts into protected page:', tab.url);
+      // console.warn('[getPageContext] Cannot inject scripts into protected page:', tab.url);
       return {
         url: tab.url,
         title: tab.title || "",
