@@ -1,5 +1,6 @@
 # Config with secrets
 config/config.json
+config/config-llm.json
 
 # Dependencies
 node_modules/
