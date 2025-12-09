@@ -15,20 +15,38 @@ MANDATORY REQUIREMENTS FOR RETRIES:
 4. ✅ ALWAYS analyze the error message to understand WHY it failed
 
 RETRY STRATEGY EXAMPLES:
-If Attempt 1 used: click({selector: "button[data-testid='submit']"}) and FAILED
+
+Example 1: Navigation link (the most common mistake!)
+Attempt 1: clickButton({text: "Access Tokens"}) → FAILED: "Button not found"
+→ Check the HTML: It's <a href="/settings/tokens">Access Tokens</a> - it's a LINK, not a button!
+  ✅ Attempt 2: clickLink({text: "Access Tokens"}) - correct tool for <a> tags!
+  ❌ WRONG: clickButton({text: "Access Tokens"}) again - still wrong tool!
+
+Example 2: Selector-based click
+Attempt 1: click({selector: "button[data-testid='submit']"}) → FAILED: "Element not found"
 → Try DIFFERENT approaches:
-  ✅ Option A: clickButton({buttonText: "Submit"}) - use text instead of selector
-  ✅ Option B: click({selector: "button.submit-btn"}) - use different selector (class)
-  ✅ Option C: click({selector: "#submitButton"}) - use ID selector
-  ✅ Option D: clickLink({linkText: "Submit"}) - if it's actually a link
+  ✅ Option A: clickButton({text: "Submit"}) - use text instead of selector
+  ✅ Option B: click({selector: "button.submit-btn"}) - different selector (class)
+  ✅ Option C: click({selector: "#submitButton"}) - different selector (ID)
+  ✅ Option D: clickLink({text: "Submit"}) - maybe it's actually a link
   ❌ WRONG: click({selector: "button[data-testid='submit']"}) - same as failed attempt!
 
 Alternative Tool Strategies:
 - Selector failed → Try text-based (clickButton, clickLink, findSearchInput)
 - Text-based failed → Try selector-based (click with CSS selector)
+- clickButton failed → Try clickLink (element might be <a> tag, not <button>)
+- clickLink failed → Try clickButton (element might be <button> with link styling)
 - Specific selector failed → Try generic selector (by tag name, class, or visible text)
 - data-testid selector failed → Try aria-label, title, class, id, or text content
 - One element type failed → Try related elements (button vs link vs input)
+- YouTube video click failed → Try alternative selectors:
+  * Attempt 1: click({selector: "ytd-video-renderer:first-of-type a#video-title"})
+  * Attempt 2: click({selector: "a#video-title"})
+  * Attempt 3: click({selector: "#video-title"})
+  * Attempt 4: click({selector: "ytd-video-renderer:first-of-type"})
+
+CRITICAL REMINDER: Tabs, navigation menus, and sidebar links are ALMOST ALWAYS <a> tags!
+If clickButton fails with "Button not found" → immediately try clickLink on retry!
 
 Think creatively! There are usually multiple ways to interact with elements.
 
@@ -40,19 +58,43 @@ Tool Selection Strategy:
    - For GitHub → use https://www.github.com
 
 2. For search actions:
-   - PREFER findSearchInput over manual selectors (it intelligently finds search boxes)
-   - Only use fill + specific selector if findSearchInput is mentioned to have failed
+   - **ALWAYS use findSearchInput for searches on major websites** (Google, YouTube, Amazon, etc.)
+   - findSearchInput intelligently finds and fills search boxes, then submits automatically
+   - For Google: Always use findSearchInput({value: "search term"})
+   - For YouTube: Always use findSearchInput({value: "search term"})
+   - Only use fill + specific selector if findSearchInput has explicitly failed in a previous attempt
 
-3. For clicking actions:
-   - If you know the button/link text → use clickButton or clickLink
-   - If you only have a selector → use click
-   - If text-based clicking failed → try selector-based, or vice versa
+3. For clicking actions - CHECK THE HTML FIRST:
+   - Look at the page context to see if the element is an <a> tag (link) or <button>/<input type="button"> (button)
+   - If it's an <a> tag → use clickLink with text parameter
+   - If it's a <button> or <input type="button"> → use clickButton with text parameter
+   - If you only have a selector → use click with CSS selector
+   - CRITICAL: Navigation menu items and tabs are usually <a> tags (links), not buttons!
+
+   **SPECIAL CASE - YouTube Videos**:
+   - YouTube video thumbnails are complex nested structures (usually <a> tags with nested <div> and <img>)
+   - ALWAYS use click with a CSS selector for YouTube videos
+   - Best selectors for YouTube videos:
+     * `ytd-video-renderer:first-of-type a#video-title` - first video in search/home
+     * `ytd-video-renderer a#video-title` - any video title link
+     * `a#video-title` - simple video title selector
+     * `ytd-video-renderer:first-of-type` - first video container
+   - DO NOT use clickLink for YouTube videos (text matching is unreliable due to complex structure)
+   - When action says "click the first video" or "play video" on YouTube → use click({selector: "ytd-video-renderer:first-of-type a#video-title"})
+
+   Examples:
+   ✅ Correct: <a href="/settings/tokens">Access Tokens</a> → clickLink({text: "Access Tokens"})
+   ✅ Correct: <button>Submit</button> → clickButton({text: "Submit"})
+   ✅ Correct: <a class="tab">Overview</a> → clickLink({text: "Overview"})
+   ✅ Correct: YouTube video → click({selector: "ytd-video-renderer:first-of-type a#video-title"})
+   ❌ Wrong: <a href="/settings/tokens">Access Tokens</a> → clickButton({text: "Access Tokens"})
+   ❌ Wrong: YouTube video → clickLink({text: "video title"}) - text matching is unreliable
 
 4. For form interactions:
    - Use fill for input fields
    - Use select for dropdowns
    - Use check for checkboxes
-   - Use fillAndSubmit for search boxes that submit on Enter
+   - Use fillAndSubmit for search boxes that submit on Enter (but prefer findSearchInput for major sites)
 
 5. For celebration/party/fireworks actions:
    - Action mentions celebration, party, fireworks → use showFireworks
