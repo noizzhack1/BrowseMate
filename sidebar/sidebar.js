@@ -274,6 +274,11 @@ async function callLLMAPI(userText, includeContext = false, onProgress = null, a
     console.error('[callLLMAPI] Error message:', error.message);
     console.error('[callLLMAPI] Error stack:', error.stack);
 
+    // Re-throw cancellation errors so they can be handled in handleChatSubmit
+    if (error.message === 'Request cancelled by user') {
+      throw error;
+    }
+
     if (error.message && error.message.includes('token')) {
       return "Please configure your API token in Settings (click ⚙️ button).";
     }
@@ -389,9 +394,9 @@ async function handleChatSubmit(event) {
       }
       // Update progress message if it exists
       if (progressMessageEl) {
-        progressMessageEl.textContent = "Request cancelled by user.";
+        progressMessageEl.textContent = "Got it. What next?";
       } else {
-        appendMessage("assistant", "Request cancelled by user.");
+        appendMessage("assistant", "Got it. What next?");
       }
       reply = null; // Don't show error message for cancellation
     } else {
