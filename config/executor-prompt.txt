@@ -40,12 +40,13 @@ Tool Selection Strategy:
    - For GitHub → use https://www.github.com
 
 2. For search actions:
-   - PREFER findSearchInput over manual selectors (it intelligently finds search boxes)
-   - Only use fill + specific selector if findSearchInput is mentioned to have failed
+   - **ALWAYS use findSearchInput for searches on major websites** (Google, YouTube, Amazon, etc.)
+   - findSearchInput intelligently finds and fills search boxes, then submits automatically
+   - For Google: Always use findSearchInput({value: "search term"})
+   - For YouTube: Always use findSearchInput({value: "search term"})
+   - Only use fill + specific selector if findSearchInput has explicitly failed in a previous attempt
 
 3. For clicking actions:
-   - For YouTube videos → ALWAYS use clickYouTubeVideo (it handles all YouTube video selectors automatically)
-   - For Google search results → ALWAYS use clickGoogleResult (it handles all Google result selectors automatically)
    - If you know the button/link text → use clickButton or clickLink
    - If you only have a selector → use click
    - If text-based clicking failed → try selector-based, or vice versa
@@ -54,7 +55,7 @@ Tool Selection Strategy:
    - Use fill for input fields
    - Use select for dropdowns
    - Use check for checkboxes
-   - Use fillAndSubmit for search boxes that submit on Enter
+   - Use fillAndSubmit for search boxes that submit on Enter (but prefer findSearchInput for major sites)
 
 Analyzing Page Context:
 - Look at the HTML to identify actual selectors, IDs, classes

@@ -51,9 +51,23 @@ async function getPageContext() {
   try {
     // Get reference to the currently active tab
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    
+
     // Return empty context if no valid tab is found
     if (!tab || !tab.id) return { url: "", title: "", text: "", html: "" };
+
+    // Check if this is a protected Chrome URL where script injection is not allowed
+    if (tab.url && (tab.url.startsWith('chrome://') ||
+                    tab.url.startsWith('chrome-extension://') ||
+                    tab.url.startsWith('edge://') ||
+                    tab.url.startsWith('about:'))) {
+      console.warn('[getPageContext] Cannot inject scripts into protected page:', tab.url);
+      return {
+        url: tab.url,
+        title: tab.title || "",
+        text: `This is a protected browser page (${tab.url}). BrowseMate cannot interact with chrome://, edge://, about: or extension pages due to browser security restrictions.`,
+        html: ""
+      };
+    }
 
     // Execute script in the context of the active tab to extract page information
     const results = await chrome.scripting.executeScript({
@@ -61,7 +75,7 @@ async function getPageContext() {
       func: () => {
         // Clone the body to extract text without modifying the actual DOM
         const clone = document.body.cloneNode(true);
-        
+
         // Remove script, style, and noscript elements from the clone (not needed for text extraction)
         const scripts = clone.querySelectorAll("script, style, noscript");
         scripts.forEach((el) => el.remove());
@@ -103,9 +117,13 @@ async function setPageFrozen(freeze) {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab || !tab.id) return;
 
-    // Skip freezing for extension pages (chrome-extension:// URLs)
-    // Chrome doesn't allow script injection into extension pages
-    if (tab.url && tab.url.startsWith('chrome-extension://')) {
+    // Skip freezing for protected browser pages
+    // Chrome doesn't allow script injection into these pages
+    if (tab.url && (tab.url.startsWith('chrome://') ||
+                    tab.url.startsWith('chrome-extension://') ||
+                    tab.url.startsWith('edge://') ||
+                    tab.url.startsWith('about:'))) {
+      console.warn('[setPageFrozen] Cannot freeze protected page:', tab.url);
       return;
     }
 

@@ -45,6 +45,8 @@ Examples: "Play a Coldplay song", "Search for a video", "Click the submit button
   - Be kind, clear, and practical
   - Not include numbering ("1.", "2.", etc.)
   - Not include explanation, reasoning, or justification
+  - **NEVER use "or" to provide multiple options** (e.g., WRONG: "Click the button or press Enter")
+  - Choose ONE specific action, not alternatives
 - DO NOT include any fields other than "action" and "description".
 
 # DECISION GUIDELINES
@@ -67,8 +69,13 @@ Examples: "Play a Coldplay song", "Search for a video", "Click the submit button
 - **ALWAYS check the CURRENT PAGE CONTEXT first** before planning navigation
 - If the user is already on the target website (e.g., already on YouTube), **DO NOT** add a "navigate to" action
 - Only navigate if the user is NOT on the required page
+- **SPECIAL CASE - Google searches**:
+  - If the user is on Google and wants to search for something, use a SINGLE action: "fill"
+  - Description should be: "Search for [query] on Google"
+  - The executor will handle finding the search box and submitting automatically
 - Examples:
   - User is on YouTube and says "search for a video" → Start with search action, NOT navigation
+  - User is on Google and says "search for cats" → Single "fill" action: "Search for cats on Google"
   - User is on Google and says "play a YouTube video" → Need to navigate to YouTube first
   - User is on a form and says "fill in the name field" → Start with fill action, no navigation needed
 
@@ -77,12 +84,17 @@ Examples: "Play a Coldplay song", "Search for a video", "Click the submit button
 - Only include navigation if the current page is different from where the user needs to be
 - Provide the **minimum number of steps** necessary to accomplish the request
 - Break down complex tasks into clear, atomic steps
+- **For search operations**: Break into separate steps:
+  1. Fill the search box (e.g., "Enter 'search term' into the search box")
+  2. Submit the search (e.g., "Click the search button" OR "Press Enter to submit")
+  - Choose ONE submission method, not both
 - If the task cannot be automated fully (e.g., login required):
   - Produce actions that get as close as possible
 - If NO meaningful action can be taken, return:
 {
   "actions": []
 }
+
 
 # RESTRICTIONS
 - Output ONLY valid JSON (no markdown, no commentary, no explanation)
