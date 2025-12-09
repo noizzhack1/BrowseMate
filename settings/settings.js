@@ -270,7 +270,7 @@ function cancelEdit() {
   // Reset form
   document.getElementById('mcpName').value = '';
   document.getElementById('mcpUrl').value = '';
-  document.getElementById('mcpType').value = 'sse';
+  document.getElementById('mcpType').value = 'http';
   
   // Reset Auth
   document.getElementById('mcpAuthType').value = 'none';
@@ -306,7 +306,57 @@ async function testServer(index, btn) {
   try {
     console.log('Testing server URL:', server.url, 'Type:', server.type);
     
-    if (server.type === 'sse') {
+    if (server.type === 'http') {
+      // Test HTTP (Streamable-HTTP) transport with POST request
+      // FastMCP requires BOTH content types in Accept header
+      const headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream, application/json'
+      };
+      
+      if (server.auth && server.auth.type === 'header') {
+        headers[server.auth.headerName] = server.auth.headerValue;
+      }
+      
+      console.log('Sending POST request to test HTTP transport...');
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      
+      // Send a simple ping/initialize request to test connectivity
+      const testRequest = {
+        jsonrpc: '2.0',
+        method: 'initialize',
+        params: {
+          protocolVersion: '2024-11-05',
+          capabilities: {},
+          clientInfo: { name: 'BrowseMate-Test', version: '1.0.0' }
+        },
+        id: 1
+      };
+      
+      try {
+        const response = await fetch(server.url, {
+          method: 'POST',
+          headers: headers,
+          body: JSON.stringify(testRequest),
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        console.log('Response received:', response.status);
+
+        if (response.ok) {
+          console.log('Test successful, showing status...');
+          showStatus(`Success: Connected to ${server.name}`, 'success');
+        } else {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        throw fetchError;
+      }
+
+    } else if (server.type === 'sse') {
       const headers = {
         'Accept': 'text/event-stream'
       };
@@ -777,7 +827,9 @@ cancelMcpBtn.addEventListener('click', cancelEdit);
 
 mcpTypeSelect.addEventListener('change', () => {
   const urlInput = document.getElementById('mcpUrl');
-  if (mcpTypeSelect.value === 'sse') {
+  if (mcpTypeSelect.value === 'http') {
+    urlInput.placeholder = 'http://localhost:8000/mcp';
+  } else if (mcpTypeSelect.value === 'sse') {
     urlInput.placeholder = 'http://localhost:3000/sse';
   } else {
     urlInput.placeholder = 'ws://localhost:3000';

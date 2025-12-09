@@ -71,7 +71,7 @@ async function getPageContext() {
                     tab.url.startsWith('chrome-extension://') ||
                     tab.url.startsWith('edge://') ||
                     tab.url.startsWith('about:'))) {
-      // console.warn('[getPageContext] Cannot inject scripts into protected page:', tab.url);
+      console.warn('[getPageContext] Cannot inject scripts into protected page:', tab.url);
       return {
         url: tab.url,
         title: tab.title || "",
@@ -1396,6 +1396,12 @@ async function handleChatSubmit(event) {
         return;
       }
 
+      // Freeze page when actions start (first time onProgress is called)
+      if (!isPageFrozen) {
+        setPageFrozen(true);
+        isPageFrozen = true;
+      }
+
       // Remove "Thinking..." message if still there
       if (chatMessagesEl && chatMessagesEl.lastChild) {
         const lastMsg = chatMessagesEl.lastChild.querySelector('.message__body');
@@ -1460,6 +1466,7 @@ async function handleChatSubmit(event) {
         progressWrapper.appendChild(iconsWrapper);
         
         chatMessagesEl.appendChild(progressWrapper);
+        chatMessagesEl.appendChild(progressContainer);
       }
 
       // Update the message with the current task list
