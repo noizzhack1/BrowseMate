@@ -1,0 +1,12 @@
+[
+  {
+    "id": "demo-server",
+    "name": "Demo Server",
+    "type": "sse",
+    "url": "http://localhost:3000/sse",
+    "auth": {
+      "type": "none"
+    },
+    "enabled": false
+  }
+]
