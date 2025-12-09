@@ -122,10 +122,12 @@ User says: "finish it"
 - Only include navigation if the current page is different from where the user needs to be
 - Provide the **minimum number of steps** necessary to accomplish the request
 - Break down complex tasks into clear, atomic steps
-- **For search operations**: Break into separate steps:
-  1. Fill the search box (e.g., "Enter 'search term' into the search box")
-  2. Submit the search (e.g., "Click the search button" OR "Press Enter to submit")
-  - Choose ONE submission method, not both
+- **For search operations - CRITICAL**:
+  - ALWAYS use a SINGLE "fill" action with description "Search for [query]" or "Search for [query] on [website]"
+  - The executor will handle finding the search box AND submitting automatically
+  - DO NOT create separate fill + submit actions - the executor's findSearchInput tool does both
+  - Example: User says "search for react on npmjs" → Single action: {"action": "fill", "description": "Search for react on npmjs"}
+  - Example: User says "search for cats" → Single action: {"action": "fill", "description": "Search for cats"}
 - If the task cannot be automated fully (e.g., login required):
   - Produce actions that get as close as possible
 - If NO meaningful action can be taken, return:

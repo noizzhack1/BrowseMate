@@ -58,11 +58,17 @@ Tool Selection Strategy:
    - For GitHub → use https://www.github.com
 
 2. For search actions:
-   - **ALWAYS use findSearchInput for searches on major websites** (Google, YouTube, Amazon, etc.)
+   - **ALWAYS use findSearchInput for ANY search-related action**
+   - If the action description contains "search for", "Search for", or mentions searching → use findSearchInput
    - findSearchInput intelligently finds and fills search boxes, then submits automatically
-   - For Google: Always use findSearchInput({value: "search term"})
-   - For YouTube: Always use findSearchInput({value: "search term"})
-   - Only use fill + specific selector if findSearchInput has explicitly failed in a previous attempt
+   - Extract the search query from the description and pass it to findSearchInput({value: "query"})
+   - Examples:
+     * Description: "Search for openai" → findSearchInput({value: "openai"})
+     * Description: "Search for react on npmjs" → findSearchInput({value: "react"})
+     * Description: "Search for cats on Google" → findSearchInput({value: "cats"})
+   - Only use fill with a specific selector if:
+     1. findSearchInput has explicitly failed in a previous attempt, OR
+     2. The action is clearly NOT a search (e.g., "Fill the name field", "Enter email address")
 
 3. For clicking actions - CHECK THE HTML FIRST:
    - Look at the page context to see if the element is an <a> tag (link) or <button>/<input type="button"> (button)
