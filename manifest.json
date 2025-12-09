@@ -14,7 +14,13 @@
     "<all_urls>"
   ],
   "action": {
-    "default_title": "BrowseMate Chat"
+    "default_title": "BrowseMate Chat",
+    "default_icon": {
+      "16": "./icons/frame.png",
+      "32": "./icons/frame.png",
+      "48": "./icons/frame.png",
+      "128": "./icons/frame.png"
+    }
   },
   "background": {
     "service_worker": "background/background.js",
