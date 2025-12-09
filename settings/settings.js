@@ -230,16 +230,16 @@ function removeServer(index) {
 function editServer(index) {
   editingServerIndex = index;
   const server = currentMCPServers[index];
-  
+
   // Populate form
   document.getElementById('mcpName').value = server.name;
   document.getElementById('mcpType').value = server.type;
   document.getElementById('mcpUrl').value = server.url;
-  
+
   // Trigger change event to set placeholder
   const event = new Event('change');
   document.getElementById('mcpType').dispatchEvent(event);
-  
+
   // Populate Auth
   if (server.auth && server.auth.type === 'header') {
     document.getElementById('mcpAuthType').value = 'header';
@@ -252,15 +252,19 @@ function editServer(index) {
     document.getElementById('mcpAuthHeaderValue').value = '';
     mcpAuthHeaderFields.style.display = 'none';
   }
-  
+
   // Update UI
   mcpFormTitle.textContent = 'Edit Server';
   addMcpBtn.textContent = 'Update Server';
   addMcpBtn.classList.remove('btn-secondary');
   addMcpBtn.classList.add('btn-primary');
   cancelMcpBtn.style.display = 'inline-block';
-  
-  // Scroll to form
+
+  // Ensure MCP tab is active and scroll to form
+  const mcpTabBtn = document.querySelector('.tab-btn[data-tab="mcp"]');
+  if (mcpTabBtn && typeof switchTab === 'function') {
+    switchTab('mcp');
+  }
   document.querySelector('.mcp-add-form').scrollIntoView({ behavior: 'smooth' });
 }
 
@@ -818,6 +822,29 @@ async function handleBackToSite() {
     console.error('Error requesting settings close:', error);
   }
 }
+
+// Tab switching functionality
+const tabButtons = document.querySelectorAll('.tab-btn');
+const tabPanels = document.querySelectorAll('.tab-panel');
+
+function switchTab(tabId) {
+  // Update button states
+  tabButtons.forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tabId);
+  });
+
+  // Update panel visibility
+  tabPanels.forEach(panel => {
+    panel.classList.toggle('active', panel.id === `tab-${tabId}`);
+  });
+}
+
+// Add click listeners to tab buttons
+tabButtons.forEach(btn => {
+  btn.addEventListener('click', () => {
+    switchTab(btn.dataset.tab);
+  });
+});
 
 // Event listeners
 settingsForm.addEventListener('submit', saveSettings);

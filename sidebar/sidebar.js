@@ -6,6 +6,21 @@ import { LLMClient } from '../lib/llm-client.js';
 // Import memory manager for conversation history
 import { getMemoryManager } from '../lib/memory-manager.js';
 
+// Import modular utilities
+import { markdownToHTML, textToHTML } from './modules/markdown.js';
+import {
+  autoResizeTextArea,
+  toggleSettings,
+  toggleChatPanel as toggleChatPanelBase,
+  handleStopClick as handleStopClickBase,
+  updateButtonClasses as updateButtonClassesBase
+} from './modules/ui-utils.js';
+import { getPageContext, setPageFrozen } from './modules/page-context.js';
+import {
+  handleMemoryStatsClick as handleMemoryStatsClickBase,
+  startNewChat as startNewChatBase
+} from './modules/memory-stats.js';
+
 // =========================
 // DOM references
 // =========================
@@ -47,24 +62,7 @@ let isRequestInProgress = false;
  * @param {boolean} isResponding - Whether a request is in progress
  */
 function updateButtonClasses(isResponding) {
-  // Base classes for both buttons
-  const baseClasses = 'w-10 h-10 rounded-full flex items-center justify-center transition-all disabled:opacity-50 disabled:cursor-not-allowed';
-  
-  // Update Stop button (shown when responding)
-  if (chatStopBtn) {
-    const stopClasses = isResponding
-      ? `${baseClasses} bg-red-500 hover:bg-red-600 text-white`
-      : baseClasses;
-    chatStopBtn.className = `primary-button chat-input__stop ${stopClasses}`;
-  }
-  
-  // Update Send button (shown when not responding)
-  if (chatSendBtn) {
-    const sendClasses = !isResponding
-      ? `${baseClasses} bg-blue-600 hover:bg-blue-700 text-white`
-      : baseClasses;
-    chatSendBtn.className = `primary-button chat-input__send ${sendClasses}`;
-  }
+  updateButtonClassesBase(isResponding, chatStopBtn, chatSendBtn);
 }
 
 // =========================
@@ -74,159 +72,7 @@ function updateButtonClasses(isResponding) {
 /** @type {import('../lib/memory-manager.js').MemoryManager | null} */
 let memoryManager = null;
 
-// =========================
-// Page Context & Freeze helpers
-// =========================
-
-/**
- * Get the current page context (URL, title, visible text, and HTML structure)
- * @returns {Promise<{url: string, title: string, text: string, html: string}>}
- */
-async function getPageContext() {
-  // Query the active tab in the current window
-  try {
-    // Get reference to the currently active tab
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-    // Return empty context if no valid tab is found
-    if (!tab || !tab.id) return { url: "", title: "", text: "", html: "" };
-
-    // Check if this is a protected Chrome URL where script injection is not allowed
-    if (tab.url && (tab.url.startsWith('chrome://') ||
-                    tab.url.startsWith('chrome-extension://') ||
-                    tab.url.startsWith('edge://') ||
-                    tab.url.startsWith('about:'))) {
-      console.warn('[getPageContext] Cannot inject scripts into protected page:', tab.url);
-      return {
-        url: tab.url,
-        title: tab.title || "",
-        text: `This is a protected browser page (${tab.url}). BrowseMate cannot interact with chrome://, edge://, about: or extension pages due to browser security restrictions.`,
-        html: ""
-      };
-    }
-
-    // Execute script in the context of the active tab to extract page information
-    const results = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: () => {
-        // Clone the body to extract text without modifying the actual DOM
-        const clone = document.body.cloneNode(true);
-
-        // Remove script, style, and noscript elements from the clone (not needed for text extraction)
-        const scripts = clone.querySelectorAll("script, style, noscript");
-        scripts.forEach((el) => el.remove());
-
-        // Extract visible text content, normalize whitespace (no character limit)
-        const text = clone.innerText.replace(/\s+/g, " ").trim();
-
-        // Get the full HTML structure for action execution (selectors, element identification)
-        const html = document.body.outerHTML;
-
-        // Return comprehensive page context object
-        return {
-          url: window.location.href,   // Current page URL
-          title: document.title,        // Page title
-          text,                         // Visible text content (cleaned)
-          html                          // Full HTML structure for Task B actions
-        };
-      }
-    });
-
-    // Return the result if valid, otherwise return empty context
-    return results && results[0] && results[0].result
-      ? results[0].result
-      : { url: "", title: "", text: "", html: "" };
-  } catch (error) {
-    // Log error and return empty context on failure
-    console.error("Error getting page context:", error);
-    return { url: "", title: "", text: "", html: "" };
-  }
-}
-
-/**
- * Freeze or unfreeze the current page with a blue border overlay,
- * using the same pattern as getPageContext (runs in the page context).
- * @param {boolean} freeze
- */
-async function setPageFrozen(freeze) {
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab || !tab.id) return;
-
-    // Skip freezing for protected browser pages
-    // Chrome doesn't allow script injection into these pages
-    if (tab.url && (tab.url.startsWith('chrome://') ||
-                    tab.url.startsWith('chrome-extension://') ||
-                    tab.url.startsWith('edge://') ||
-                    tab.url.startsWith('about:'))) {
-      console.warn('[setPageFrozen] Cannot freeze protected page:', tab.url);
-      return;
-    }
-
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: (shouldFreeze) => {
-        const OVERLAY_ID = "__browsemate_page_freeze_overlay";
-        const STYLE_ID = "__browsemate_freeze_style";
-        const body = document.body;
-        if (!body) return;
-
-        if (shouldFreeze) {
-          if (document.getElementById(OVERLAY_ID)) return;
-
-          // Inject Comet-style animated border CSS once
-          if (!document.getElementById(STYLE_ID)) {
-            const styleEl = document.createElement("style");
-            styleEl.id = STYLE_ID;
-            styleEl.textContent =
-              ".commet-freeze-border{" +
-              "position:relative;border-radius:12px;overflow:hidden;" +
-              "}" +
-              ".commet-freeze-border::after{" +
-              'content:"";position:absolute;inset:0;border-radius:inherit;padding:2px;' +
-              "background:linear-gradient(90deg,#6a5dfc,#b05bff,#ff5cf1,#ff6b8d,#ffb85c,#6a5dfc) 0 0/300% 100%;" +
-              "animation:commetBorderAnim 3s linear infinite;" +
-              "-webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);" +
-              "-webkit-mask-composite:xor;mask-composite:exclude;" +
-              "}" +
-              "@keyframes commetBorderAnim{" +
-              "0%{background-position:0% 0;}" +
-              "100%{background-position:-300% 0;}" +
-              "}";
-            (document.head || document.documentElement).appendChild(styleEl);
-          }
-
-          const overlay = document.createElement("div");
-          overlay.id = OVERLAY_ID;
-          overlay.className = "commet-freeze-border";
-          Object.assign(overlay.style, {
-            position: "fixed",
-            inset: "0",
-            zIndex: "2147483646",
-            pointerEvents: "auto",
-            cursor: "wait",
-            background: "rgba(15, 23, 42, 0.03)"
-          });
-
-          body.style.pointerEvents = "none";
-          body.style.userSelect = "none";
-          document.documentElement.style.overflow = "hidden";
-
-          document.body.appendChild(overlay);
-        } else {
-          const overlay = document.getElementById(OVERLAY_ID);
-          if (overlay) overlay.remove();
-          body.style.pointerEvents = "";
-          body.style.userSelect = "";
-          document.documentElement.style.overflow = "";
-        }
-      },
-      args: [freeze]
-    });
-  } catch (error) {
-    console.error("Error freezing page:", error);
-  }
-}
+// Page Context & Freeze helpers are imported from ./modules/page-context.js
 
 // =========================
 // Message helpers
@@ -519,7 +365,7 @@ async function resendMessageAndReplace(editedText, userMessageWrapper, oldAssist
       }
       
       const header = `Executing actions (${currentStep}/${totalSteps})...\n\n`;
-      progressMessageEl.textContent = header + taskList;
+      progressMessageEl.innerHTML = textToHTML(header + taskList);
       
       chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
     };
@@ -582,7 +428,7 @@ async function resendMessageAndReplace(editedText, userMessageWrapper, oldAssist
         }
       }
       if (progressMessageEl) {
-        progressMessageEl.textContent = "Don't stop me nowww, Cause Im having a good time, having a good time";
+        progressMessageEl.innerHTML = textToHTML("Don't stop me nowww, Cause Im having a good time, having a good time");
         if (memoryManager) {
           memoryManager.addMessage("assistant", "Don't stop me nowww, Cause Im having a good time, having a good time").catch(console.error);
         }
@@ -617,7 +463,7 @@ async function resendMessageAndReplace(editedText, userMessageWrapper, oldAssist
   
   // Update or create assistant response
   if (progressMessageEl && reply && reply.trim()) {
-    progressMessageEl.textContent = reply;
+    progressMessageEl.innerHTML = markdownToHTML(reply);
     if (memoryManager) {
       memoryManager.addMessage("assistant", reply).catch(error => {
         console.error('[resendMessageAndReplace] Failed to save assistant reply to memory:', error);
@@ -1050,7 +896,12 @@ function appendMessage(role, text, saveToMemory = true) {
 
   const body = document.createElement("div");
   body.className = "message__body";
-  body.textContent = text;
+  // Render markdown for assistant messages, plain text for user messages
+  if (role === 'assistant') {
+    body.innerHTML = markdownToHTML(text);
+  } else {
+    body.textContent = text;
+  }
 
   container.appendChild(body);
 
@@ -1157,86 +1008,7 @@ function createStreamingMessage(role) {
   return { container, body };
 }
 
-/**
- * Simple markdown to HTML converter for basic formatting
- * Handles bold, lists, and preserves structure
- * @param {string} markdown - Markdown text
- * @returns {string} HTML string
- */
-function markdownToHTML(markdown) {
-  if (!markdown) return '';
-
-  // Escape HTML first to prevent XSS
-  let html = markdown
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-
-  // Convert **bold** to <strong>
-  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-
-  // Split into lines for list processing
-  const lines = html.split('\n');
-  const processedLines = [];
-  let inList = false;
-  let listType = null;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    // Check for numbered list (1. item)
-    const numberedMatch = line.match(/^(\d+)\.\s+(.+)$/);
-    if (numberedMatch) {
-      if (!inList || listType !== 'ol') {
-        if (inList) processedLines.push(`</${listType}>`);
-        processedLines.push('<ol>');
-        inList = true;
-        listType = 'ol';
-      }
-      processedLines.push(`<li>${numberedMatch[2]}</li>`);
-      continue;
-    }
-
-    // Check for bullet list (- item, but not * which might be italic)
-    const bulletMatch = line.match(/^-\s+(.+)$/);
-    if (bulletMatch) {
-      if (!inList || listType !== 'ul') {
-        if (inList) processedLines.push(`</${listType}>`);
-        processedLines.push('<ul>');
-        inList = true;
-        listType = 'ul';
-      }
-      processedLines.push(`<li>${bulletMatch[1]}</li>`);
-      continue;
-    }
-
-    // Regular line - close list if we were in one
-    if (inList) {
-      processedLines.push(`</${listType}>`);
-      inList = false;
-      listType = null;
-    }
-
-    // Preserve empty lines as breaks
-    if (line.trim() === '') {
-      processedLines.push('<br>');
-    } else {
-      processedLines.push(line);
-    }
-  }
-
-  // Close any open list
-  if (inList) {
-    processedLines.push(`</${listType}>`);
-  }
-
-  html = processedLines.join('\n');
-
-  // Convert remaining line breaks to <br>
-  html = html.replace(/\n/g, '<br>');
-
-  return html;
-}
+// markdownToHTML and textToHTML are imported from ./modules/markdown.js
 
 /**
  * Update a streaming message with new content.
@@ -1510,7 +1282,7 @@ async function handleChatSubmit(event) {
 
       // Update the message with the current task list
       const header = `Executing actions (${currentStep}/${totalSteps})...\n\n`;
-      progressMessageEl.textContent = header + taskList;
+      progressMessageEl.innerHTML = textToHTML(header + taskList);
 
       // Auto-scroll to bottom
       chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
@@ -1578,7 +1350,7 @@ async function handleChatSubmit(event) {
       });
     };
 
-    reply = await callLLMAPI(value, includeContext, onProgress, abortSignal, onInteraction);
+    reply = await callLLMAPI(value, includeContext, onProgress, abortSignal, onInteraction, onStreamChunk);
   } catch (error) {
     // Handle cancellation gracefully
     if (abortSignal.aborted || error.message === 'Request cancelled by user') {
@@ -1591,7 +1363,7 @@ async function handleChatSubmit(event) {
       }
       // Update progress message if it exists
       if (progressMessageEl) {
-        progressMessageEl.textContent = "Don't stop me nowww, Cause Im having a good time, having a good time";
+        progressMessageEl.innerHTML = textToHTML("Don't stop me nowww, Cause Im having a good time, having a good time");
         // Save cancellation message to memory
         if (memoryManager) {
           memoryManager.addMessage("assistant", "Don't stop me nowww, Cause Im having a good time, having a good time").catch(console.error);
@@ -1631,7 +1403,7 @@ async function handleChatSubmit(event) {
 
   // If we have a progress message, update it with the final result
   if (progressMessageEl && reply && reply.trim()) {
-    progressMessageEl.textContent = reply;
+    progressMessageEl.innerHTML = markdownToHTML(reply);
     // Save the final reply to memory
     if (memoryManager) {
       memoryManager.addMessage("assistant", reply).catch(error => {
@@ -1653,24 +1425,13 @@ async function handleChatSubmit(event) {
   }
 }
 
-/**
- * Auto-resize textarea height to fit content up to a max.
- * @param {HTMLTextAreaElement} textarea
- */
-function autoResizeTextArea(textarea) {
-  textarea.style.height = "auto";
-  textarea.style.height = Math.min(textarea.scrollHeight, 80) + "px";
-}
+// autoResizeTextArea is imported from ./modules/ui-utils.js
 
 /**
  * Toggle chat open/closed.
  */
 function toggleChatPanel() {
-  if (!sidebarRootEl || !chatToggleBtn) return;
-  const isCollapsed = sidebarRootEl.classList.toggle("sidebar-root--collapsed");
-
-  chatToggleBtn.setAttribute("aria-pressed", String(!isCollapsed));
-  chatToggleBtn.title = isCollapsed ? "Show chat" : "Hide chat";
+  toggleChatPanelBase(sidebarRootEl, chatToggleBtn);
 }
 
 /**
@@ -1681,137 +1442,24 @@ function toggleChatPanel() {
  * - Show the initial welcome message again
  */
 async function startNewChat() {
-  console.log('[startNewChat] Starting new chat session');
-
-  // Clear memory
-  if (memoryManager) {
-    try {
-      await memoryManager.clearHistory();
-      console.log('[startNewChat] Conversation history cleared from memory');
-    } catch (error) {
-      console.error('[startNewChat] Failed to clear memory:', error);
-    }
-  }
-
-  // Clear UI
-  if (chatMessagesEl) {
-    chatMessagesEl.innerHTML = "";
-  }
-  if (chatInputEl) {
-    chatInputEl.value = "";
-    autoResizeTextArea(chatInputEl);
-  }
-
-  // Show welcome message (and save to memory)
-  appendMessage(
-    "assistant",
-    "Hi, I'm BrowseMate Chat living in your sidebar. Type a message below to start a conversation."
-  );
+  await startNewChatBase(memoryManager, chatMessagesEl, chatInputEl, autoResizeTextArea, appendMessage);
 }
 
 /**
  * Handle Stop button click - cancel the current request
  */
 function handleStopClick() {
-  if (currentAbortController && isRequestInProgress) {
-    // Abort the current request
-    currentAbortController.abort();
-    console.log('[handleStopClick] Request cancelled by user');
-  }
+  handleStopClickBase(currentAbortController, isRequestInProgress);
 }
 
 /**
  * Handle Memory Stats button click - show conversation memory statistics
  */
 function handleMemoryStatsClick() {
-  if (!memoryManager) {
-    alert('Memory manager not initialized');
-    return;
-  }
-
-  try {
-    const stats = memoryManager.getStats();
-
-    // Format time
-    const formatTime = (timestamp) => {
-      if (!timestamp) return 'Never';
-      const date = new Date(timestamp);
-      return date.toLocaleString();
-    };
-
-    // Build stats message
-    const statsMessage = `Conversation Memory Stats:
-
-Total messages: ${stats.totalMessages}
-User messages: ${stats.userMessages}
-Assistant messages: ${stats.assistantMessages}
-
-First message: ${formatTime(stats.firstMessageTime)}
-Last message: ${formatTime(stats.lastMessageTime)}
-
-Memory is automatically saved to browser storage.
-Use "New Chat" button to clear conversation history.`;
-
-    alert(statsMessage);
-  } catch (error) {
-    console.error('[handleMemoryStatsClick] Failed to get memory stats:', error);
-    alert('Error retrieving memory stats');
-  }
+  handleMemoryStatsClickBase(memoryManager);
 }
 
-/**
- * Toggle the Settings page as a separate tab.
- * If a Settings tab is already open, close it; otherwise open it.
- */
-async function toggleSettings() {
-  const settingsUrl = chrome.runtime.getURL('settings/settings.html');
-  try {
-    // Look for any existing Settings tabs
-    const tabs = await chrome.tabs.query({ url: `${settingsUrl}*` });
-
-    if (tabs && tabs.length > 0) {
-      // Delegate closing & focus restoration to the background script so that
-      // both the Settings icon and the in-page Back link use identical logic.
-      chrome.runtime.sendMessage({ type: 'BROWSEMATE_CLOSE_SETTINGS' });
-      return;
-    }
-
-    // No existing Settings tab, remember the currently active tab then open Settings
-    try {
-      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (activeTab && typeof activeTab.id === 'number') {
-        await chrome.storage.session.set({ browsemate_last_active_tab: activeTab.id });
-      }
-    } catch (activeErr) {
-      console.warn('Error capturing last active tab before opening Settings:', activeErr);
-    }
-
-    // Pass the origin tab ID via query string so this particular Settings instance
-    // always knows which tab to return focus to when "Back" is clicked.
-    let urlWithOrigin = settingsUrl;
-    try {
-      const stored = await chrome.storage.session.get('browsemate_last_active_tab');
-      if (typeof stored.browsemate_last_active_tab === 'number') {
-        const originId = stored.browsemate_last_active_tab;
-        const u = new URL(settingsUrl);
-        u.searchParams.set('originTabId', String(originId));
-        urlWithOrigin = u.toString();
-      }
-    } catch (err) {
-      console.warn('Error attaching originTabId to settings URL:', err);
-    }
-
-    await chrome.tabs.create({ url: urlWithOrigin });
-  } catch (error) {
-    console.error('Error toggling settings:', error);
-    // Fallback: try to open in current window
-    try {
-      window.open(settingsUrl, '_blank');
-    } catch (_) {
-      // ignore
-    }
-  }
-}
+// toggleSettings is imported from ./modules/ui-utils.js
 
 // =========================
 // Initialisation
