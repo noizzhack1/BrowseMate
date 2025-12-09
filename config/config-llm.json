@@ -1,7 +1,7 @@
 {
     "llms": [
       {
-        "name": "GPT-OSS1",
+        "name": "GPT-OSS-planner",
         "token": "enter-token-here",
         "baseURL": "https://router.huggingface.co/v1",
         "MODEL": "openai/gpt-oss-20b",
@@ -9,7 +9,7 @@
         "promptFile": "config/planner-prompt.txt"
       },
       {
-        "name": "GPT-OSS",
+        "name": "GPT-OSS-exec",
         "token": "enter-token-here",
         "baseURL": "https://router.huggingface.co/v1",
         "MODEL": "openai/gpt-oss-20b",
