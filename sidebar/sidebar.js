@@ -237,6 +237,56 @@ function findNextAssistantMessage(userMessageWrapper) {
 }
 
 /**
+ * Find ALL assistant message wrappers after a given user message wrapper
+ * This includes all assistant responses that were generated from the user message
+ * @param {HTMLElement} userMessageWrapper - The user message wrapper element
+ * @returns {HTMLElement[]} Array of all assistant message wrappers after the user message
+ */
+function findAllAssistantMessagesAfter(userMessageWrapper) {
+  if (!userMessageWrapper || !chatMessagesEl) return [];
+  
+  // Get all message wrappers
+  const allWrappers = Array.from(chatMessagesEl.children);
+  const currentIndex = allWrappers.indexOf(userMessageWrapper);
+  
+  if (currentIndex === -1) return [];
+  
+  const assistantWrappers = [];
+  
+  // Collect all assistant messages until we hit another user message
+  for (let i = currentIndex + 1; i < allWrappers.length; i++) {
+    const wrapper = allWrappers[i];
+    if (wrapper.classList.contains('message-wrapper--assistant')) {
+      assistantWrappers.push(wrapper);
+    } else if (wrapper.classList.contains('message-wrapper--user')) {
+      // Stop when we hit another user message (conversation thread boundary)
+      break;
+    }
+  }
+  
+  return assistantWrappers;
+}
+
+/**
+ * Find ALL message wrappers (both user and assistant) after a given message wrapper
+ * This is used when editing a message to remove all subsequent messages (conversation rewind)
+ * @param {HTMLElement} messageWrapper - The message wrapper element to rewind from
+ * @returns {HTMLElement[]} Array of all message wrappers after the given message
+ */
+function findAllMessagesAfter(messageWrapper) {
+  if (!messageWrapper || !chatMessagesEl) return [];
+  
+  // Get all message wrappers
+  const allWrappers = Array.from(chatMessagesEl.children);
+  const currentIndex = allWrappers.indexOf(messageWrapper);
+  
+  if (currentIndex === -1) return [];
+  
+  // Return all messages after this one (both user and assistant)
+  return allWrappers.slice(currentIndex + 1);
+}
+
+/**
  * Remove a message and its associated memory entry
  * @param {HTMLElement} messageWrapper - The message wrapper to remove
  * @param {string} role - The role of the message ('user' or 'assistant')
@@ -271,71 +321,94 @@ async function removeMessageAndMemory(messageWrapper, role, content) {
 }
 
 /**
- * Resend a user message and replace the assistant response
+ * Resend a user message and replace ALL assistant responses that came after it
  * @param {string} editedText - The edited user message text
  * @param {HTMLElement} userMessageWrapper - The user message wrapper element
- * @param {HTMLElement} oldAssistantWrapper - The old assistant message wrapper to replace
+ * @param {HTMLElement[]} oldAssistantWrappers - Array of all old assistant message wrappers to replace
  * @param {string} oldUserContent - The original user message content (before editing) for memory removal
+ * @param {boolean} skipMemoryCleanup - If true, skip memory cleanup (already done by caller)
  */
-async function resendMessageAndReplace(editedText, userMessageWrapper, oldAssistantWrapper, oldUserContent = '') {
+async function resendMessageAndReplace(editedText, userMessageWrapper, oldAssistantWrappers = [], oldUserContent = '', skipMemoryCleanup = false) {
   if (!chatMessagesEl || isRequestInProgress) {
     console.warn('[resendMessageAndReplace] Cannot resend: chat not ready or request in progress');
     return;
   }
   
-  // If oldUserContent not provided, try to get it from the message body
-  // (though it should already be updated with new text at this point)
-  if (!oldUserContent) {
-    const userBody = userMessageWrapper.querySelector('.message__body');
-    oldUserContent = userBody ? (userBody.textContent || userBody.innerText || '') : '';
-  }
-  
-  let oldAssistantContent = '';
-  if (oldAssistantWrapper) {
-    const oldBody = oldAssistantWrapper.querySelector('.message__body');
-    if (oldBody) {
-      oldAssistantContent = oldBody.textContent || oldBody.innerText || '';
+  // Remove ALL old assistant messages from DOM (if any remain)
+  // Note: These may have already been removed by the caller, but we'll try anyway
+  let removedFromDOM = 0;
+  for (const wrapper of oldAssistantWrappers) {
+    if (wrapper && wrapper.parentNode) {
+      wrapper.remove();
+      removedFromDOM++;
     }
   }
+  if (removedFromDOM > 0) {
+    console.log(`[resendMessageAndReplace] Removed ${removedFromDOM} assistant message(s) from DOM`);
+  }
   
-  // Remove old messages from memory in reverse order (assistant first, then user)
-  // This ensures we remove the correct pair even if there are duplicate messages
-  if (memoryManager) {
-    try {
-      const allMessages = memoryManager.getAllMessages();
-      
-      // Find and remove assistant message first (search from end to find the most recent match)
-      if (oldAssistantContent) {
-        for (let i = allMessages.length - 1; i >= 0; i--) {
-          if (allMessages[i].role === 'assistant' && allMessages[i].content === oldAssistantContent) {
-            allMessages.splice(i, 1);
-            console.log('[resendMessageAndReplace] Removed assistant message from memory');
-            break; // Only remove the first (most recent) match
+  // Skip memory cleanup if already done by caller
+  if (skipMemoryCleanup) {
+    console.log('[resendMessageAndReplace] Skipping memory cleanup (already done by caller)');
+  } else {
+    // If oldUserContent not provided, try to get it from the message body
+    if (!oldUserContent) {
+      const userBody = userMessageWrapper.querySelector('.message__body');
+      oldUserContent = userBody ? (userBody.textContent || userBody.innerText || '') : '';
+    }
+    
+    // Collect all old assistant message contents for memory removal
+    const oldAssistantContents = [];
+    for (const wrapper of oldAssistantWrappers) {
+      if (wrapper && wrapper.parentNode) {
+        const oldBody = wrapper.querySelector('.message__body');
+        if (oldBody) {
+          const content = oldBody.textContent || oldBody.innerText || '';
+          if (content) {
+            oldAssistantContents.push(content);
           }
         }
       }
-      
-      // Find and remove user message (search from end to find the most recent match)
-      if (oldUserContent) {
+    }
+    
+    console.log(`[resendMessageAndReplace] Removing ${oldAssistantContents.length} assistant response(s) from memory`);
+    
+    // Remove ALL old messages from memory
+    if (memoryManager) {
+      try {
+        const allMessages = memoryManager.getAllMessages();
+        let removedCount = 0;
+        
+        // Remove ALL assistant messages that match any of the old assistant contents
         for (let i = allMessages.length - 1; i >= 0; i--) {
-          if (allMessages[i].role === 'user' && allMessages[i].content === oldUserContent) {
+          const msg = allMessages[i];
+          if (msg.role === 'assistant' && oldAssistantContents.includes(msg.content)) {
             allMessages.splice(i, 1);
-            console.log('[resendMessageAndReplace] Removed user message from memory');
-            break; // Only remove the first (most recent) match
+            removedCount++;
+            console.log(`[resendMessageAndReplace] Removed assistant message from memory: ${msg.content.substring(0, 50)}...`);
           }
         }
+        
+        console.log(`[resendMessageAndReplace] Removed ${removedCount} assistant message(s) from memory`);
+        
+        // Remove the old user message (search from end to find the most recent match)
+        if (oldUserContent) {
+          for (let i = allMessages.length - 1; i >= 0; i--) {
+            if (allMessages[i].role === 'user' && allMessages[i].content === oldUserContent) {
+              allMessages.splice(i, 1);
+              console.log('[resendMessageAndReplace] Removed old user message from memory');
+              break;
+            }
+          }
+        }
+        
+        // Save updated messages
+        await memoryManager.save();
+        console.log('[resendMessageAndReplace] Memory cleanup complete. Remaining messages:', allMessages.length);
+      } catch (error) {
+        console.error('[resendMessageAndReplace] Failed to remove messages from memory:', error);
       }
-      
-      // Save updated messages
-      await memoryManager.save();
-    } catch (error) {
-      console.error('[resendMessageAndReplace] Failed to remove messages from memory:', error);
     }
-  }
-  
-  // Remove old assistant message from DOM
-  if (oldAssistantWrapper) {
-    oldAssistantWrapper.remove();
   }
   
   // Prevent multiple simultaneous requests
@@ -544,6 +617,7 @@ function createMessageIcons(container, body, role, originalText = null) {
   // Create wrapper for icons (copy and edit)
   const iconsWrapper = document.createElement("div");
   iconsWrapper.className = "message__icons";
+  iconsWrapper.dataset.index = memoryManager.getAllMessages().length;
   
   // Copy button
   const copyBtn = document.createElement("button");
@@ -729,7 +803,6 @@ function createMessageIcons(container, body, role, originalText = null) {
     const saveAndResend = async () => {
       const newText = body.textContent || body.innerText || '';
       const trimmedText = newText.trim();
-      
       if (!trimmedText) {
         // If empty, restore original and don't resend
         body.textContent = savedOriginalText;
@@ -737,16 +810,8 @@ function createMessageIcons(container, body, role, originalText = null) {
         return;
       }
       
-      // Get the old content BEFORE updating (for memory removal)
+      // Get the old content BEFORE updating (for finding the message in memory)
       const oldUserContent = savedOriginalText;
-      
-      // Update the message content in place
-      body.textContent = trimmedText;
-      // Update saved original text for future edits
-      savedOriginalText = trimmedText;
-      
-      // Exit edit mode first
-      exitEditMode();
       
       // Find the message wrapper (parent of container)
       let messageWrapper = container.parentElement;
@@ -756,15 +821,62 @@ function createMessageIcons(container, body, role, originalText = null) {
       
       if (!messageWrapper) {
         console.error('[saveAndResend] Could not find message wrapper');
+        exitEditMode();
         return;
       }
       
-      // Find the next assistant message to replace
-      const nextAssistantWrapper = findNextAssistantMessage(messageWrapper);
+      // Find ALL messages after this one (both user and assistant) - conversation rewind
+      const allMessagesAfter = findAllMessagesAfter(messageWrapper);
+      console.log(`[saveAndResend] Found ${allMessagesAfter.length} message(s) to remove (conversation rewind)`);
       
-      // Resend the message and replace the assistant response
-      // Pass oldUserContent so memory removal can find the correct message
-      await resendMessageAndReplace(trimmedText, messageWrapper, nextAssistantWrapper, oldUserContent);
+      // Find the index of the edited message in memory by matching old content
+      let messageIndex = -1;
+      if (memoryManager && oldUserContent) {
+        const allMessages = memoryManager.getAllMessages();
+        // Search from end to find the most recent match
+        for (let i = allMessages.length - 1; i >= 0; i--) {
+          if (allMessages[i].role === 'user' && allMessages[i].content === oldUserContent) {
+            messageIndex = i;
+            break;
+          }
+        }
+      }
+      
+      // Remove all messages after the edited one from DOM
+      for (const wrapper of allMessagesAfter) {
+        wrapper.remove();
+      }
+      console.log(`[saveAndResend] Removed ${allMessagesAfter.length} message(s) from DOM`);
+      
+      // Update the message content in place
+      body.textContent = trimmedText;
+      // Update saved original text for future edits
+      savedOriginalText = trimmedText;
+      
+      // Exit edit mode
+      exitEditMode();
+      
+      // Update memory: edit the message and remove all subsequent messages
+      if (memoryManager && messageIndex >= 0) {
+        try {
+          // Edit the message content
+          await memoryManager.editMessage(messageIndex, trimmedText);
+          // Remove all messages after this one (conversation rewind)
+          await memoryManager.removeMessagesAfter(messageIndex);
+          console.log(`[saveAndResend] Memory updated: edited message at index ${messageIndex}, removed all subsequent messages`);
+        } catch (error) {
+          console.error('[saveAndResend] Failed to update memory:', error);
+        }
+      }
+      
+      // Now resend the edited message
+      // Since we've already removed all subsequent messages from DOM and memory,
+      // we pass skipMemoryCleanup=true to avoid duplicate cleanup
+      const allAssistantWrappers = findAllAssistantMessagesAfter(messageWrapper);
+      
+      // Resend the message - this will generate a new assistant response
+      // Skip memory cleanup since we've already done it above
+      await resendMessageAndReplace(trimmedText, messageWrapper, allAssistantWrappers, oldUserContent, true);
     };
     
     // Function to cancel editing
@@ -787,7 +899,6 @@ function createMessageIcons(container, body, role, originalText = null) {
       e.preventDefault();
       await saveAndResend();
     });
-    
     // Cancel button click handler
     cancelBtn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -1569,7 +1680,6 @@ function handleMemoryStatsClick() {
     alert('Memory manager not initialized');
     return;
   }
-  alert(memoryManager.getAllMessages())
 
   try {
     const stats = memoryManager.getStats();
