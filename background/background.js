@@ -187,11 +187,7 @@ Return ONLY the translated text with the same separator, no additional explanati
 
     const translatedText = await llmClient.generateCompletion(translationPrompt, {
       temperature: 0.3,
-<<<<<<< HEAD
-      maxTokens: 4000
-=======
       maxTokens: 4096
->>>>>>> origin/mcp-opertaion-backup
     });
 
     console.log('[background] LLM response timestamp:', new Date().toISOString());
