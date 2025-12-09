@@ -152,7 +152,7 @@ async function handleTranslatePageRequest(message, tabId) {
 
     // Split texts into chunks for parallel translation
     const SEPARATOR = '|||BROWSEMATE_SEP|||';
-    const CHUNK_SIZE = 50; // Process 50 text segments per chunk (increased for faster translation)
+    const CHUNK_SIZE = 100; // Process 100 text segments per chunk (increased for faster translation)
     const chunks = [];
 
     for (let i = 0; i < texts.length; i += CHUNK_SIZE) {
