@@ -283,9 +283,10 @@ async function loadConversationHistory() {
  * @param {boolean} includeContext
  * @param {Function} onProgress - Optional callback for progress updates
  * @param {AbortSignal} abortSignal - Signal to cancel the request
+ * @param {Function} onInteraction - Optional callback for user interactions (question) => Promise<answer>
  * @returns {Promise<string>}
  */
-async function callLLMAPI(userText, includeContext = false, onProgress = null, abortSignal = null) {
+async function callLLMAPI(userText, includeContext = false, onProgress = null, abortSignal = null, onInteraction = null) {
   console.log('[callLLMAPI] Starting LLM API call');
   console.log('[callLLMAPI] User text:', userText);
   console.log('[callLLMAPI] Include context:', includeContext);
@@ -322,7 +323,7 @@ async function callLLMAPI(userText, includeContext = false, onProgress = null, a
     // Use Task A orchestrator to process the request
     // Task A will determine if it's a question or action and route accordingly
     console.log('[callLLMAPI] Calling processRequest...');
-    const result = await processRequest(context, userText, onProgress, abortSignal, conversationHistory);
+    const result = await processRequest(context, userText, onProgress, abortSignal, conversationHistory, onInteraction);
     console.log('[callLLMAPI] ProcessRequest completed');
     
     // Check if request was aborted
@@ -476,7 +477,69 @@ async function handleChatSubmit(event) {
       chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
     };
 
-    reply = await callLLMAPI(value, includeContext, onProgress, abortSignal);
+    // Create a callback for user interactions (asking questions during execution)
+    const onInteraction = async (question) => {
+      console.log('[handleChatSubmit] onInteraction called with question:', question);
+
+      // Temporarily unfreeze the page so user can see the question
+      if (isPageFrozen) {
+        await setPageFrozen(false);
+      }
+
+      // Show the question as an assistant message
+      appendMessage("assistant", question);
+
+      // Wait for user's response by returning a Promise
+      return new Promise((resolve) => {
+        // Create a one-time event handler for the next form submission
+        const handleInteractionResponse = async (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+
+          if (!chatInputEl) {
+            resolve('');
+            return;
+          }
+
+          const response = chatInputEl.value.trim();
+          if (!response) {
+            return; // Don't accept empty responses
+          }
+
+          console.log('[handleChatSubmit] User response:', response);
+
+          // Show user's response in chat
+          appendMessage("user", response);
+
+          // Clear input
+          chatInputEl.value = "";
+          autoResizeTextArea(chatInputEl);
+
+          // Remove the temporary event listener
+          chatFormEl.removeEventListener("submit", handleInteractionResponse);
+
+          // Restore the original submit handler
+          chatFormEl.addEventListener("submit", handleChatSubmit);
+
+          // Re-freeze the page before continuing execution
+          if (!isPageFrozen) {
+            await setPageFrozen(true);
+            isPageFrozen = true;
+          }
+
+          // Resolve the promise with the user's response
+          resolve(response);
+        };
+
+        // Remove the normal submit handler temporarily
+        chatFormEl.removeEventListener("submit", handleChatSubmit);
+
+        // Add the interaction response handler
+        chatFormEl.addEventListener("submit", handleInteractionResponse);
+      });
+    };
+
+    reply = await callLLMAPI(value, includeContext, onProgress, abortSignal, onInteraction);
   } catch (error) {
     // Handle cancellation gracefully
     if (abortSignal.aborted || error.message === 'Request cancelled by user') {
