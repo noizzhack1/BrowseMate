@@ -555,12 +555,12 @@ async function resendMessageAndReplace(editedText, userMessageWrapper, oldAssist
         }
       }
       if (progressMessageEl) {
-        progressMessageEl.textContent = "Got it. What next?";
+        progressMessageEl.textContent = "Don't stop me nowww, Cause Im having a good time, having a good time";
         if (memoryManager) {
-          memoryManager.addMessage("assistant", "Got it. What next?").catch(console.error);
+          memoryManager.addMessage("assistant", "Don't stop me nowww, Cause Im having a good time, having a good time").catch(console.error);
         }
       } else {
-        appendMessage("assistant", "Got it. What next?");
+        appendMessage("assistant", "Don't stop me nowww, Cause Im having a good time, having a good time");
       }
       reply = null;
     } else {
@@ -1545,13 +1545,13 @@ async function handleChatSubmit(event) {
       }
       // Update progress message if it exists
       if (progressMessageEl) {
-        progressMessageEl.textContent = "Got it. What next?";
+        progressMessageEl.textContent = "Don't stop me nowww, Cause Im having a good time, having a good time";
         // Save cancellation message to memory
         if (memoryManager) {
-          memoryManager.addMessage("assistant", "Got it. What next?").catch(console.error);
+          memoryManager.addMessage("assistant", "Don't stop me nowww, Cause Im having a good time, having a good time").catch(console.error);
         }
       } else {
-        appendMessage("assistant", "Got it. What next?");
+        appendMessage("assistant", "Don't stop me nowww, Cause Im having a good time, having a good time");
       }
       reply = null; // Don't show error message for cancellation
     } else {
