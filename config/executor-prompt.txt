@@ -44,6 +44,11 @@ Alternative Tool Strategies:
   * Attempt 2: click({selector: "a#video-title"})
   * Attempt 3: click({selector: "#video-title"})
   * Attempt 4: click({selector: "ytd-video-renderer:first-of-type"})
+- npmjs search result click failed → Try alternative selectors:
+  * Attempt 1: click({selector: "a[href^=\"/package/\"]:first-of-type"})
+  * Attempt 2: click({selector: "section > a:first-of-type"})
+  * Attempt 3: click({selector: "[class*=\"search\"] a:first-of-type"})
+  * Attempt 4: click({selector: "li:first-of-type a"})
 
 CRITICAL REMINDER: Tabs, navigation menus, and sidebar links are ALMOST ALWAYS <a> tags!
 If clickButton fails with "Button not found" → immediately try clickLink on retry!
@@ -88,13 +93,32 @@ Tool Selection Strategy:
    - DO NOT use clickLink for YouTube videos (text matching is unreliable due to complex structure)
    - When action says "click the first video" or "play video" on YouTube → use click({selector: "ytd-video-renderer:first-of-type a#video-title"})
 
+   **SPECIAL CASE - Search Results (npmjs, Google, GitHub, etc.)**:
+   - When action says "click the first result" or "click the first search result", use CSS selectors
+   - Common selectors for first search result on different sites:
+     * **npmjs**: Try these selectors in order:
+       - `a[href^="/package/"]:first-of-type` - first package link
+       - `section > a:first-of-type` - first link in results section
+       - `[class*="search"] a:first-of-type` - first link in search container
+       - `li:first-of-type a` - first link in list item
+     * **Google**:
+       - `#search a:first-of-type` - first link in search results
+       - `.g a` - result links
+     * **GitHub**:
+       - `.repo-list-item:first-of-type a` - first repo in list
+   - ALWAYS use click with a CSS selector for search results (NOT clickLink)
+   - Start with the most specific selector and retry with more generic ones if it fails
+
    Examples:
    ✅ Correct: <a href="/settings/tokens">Access Tokens</a> → clickLink({text: "Access Tokens"})
    ✅ Correct: <button>Submit</button> → clickButton({text: "Submit"})
    ✅ Correct: <a class="tab">Overview</a> → clickLink({text: "Overview"})
    ✅ Correct: YouTube video → click({selector: "ytd-video-renderer:first-of-type a#video-title"})
+   ✅ Correct: npmjs first result → click({selector: "a[href^=\"/package/\"]:first-of-type"})
+   ✅ Correct: Google first result → click({selector: "#search a:first-of-type"})
    ❌ Wrong: <a href="/settings/tokens">Access Tokens</a> → clickButton({text: "Access Tokens"})
    ❌ Wrong: YouTube video → clickLink({text: "video title"}) - text matching is unreliable
+   ❌ Wrong: npmjs first result → clickLink({text: "openai"}) - text matching unreliable for search results
 
 4. For form interactions:
    - Use fill for input fields
