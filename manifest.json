@@ -36,7 +36,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["lib/llm-config.json"],
+      "resources": ["lib/llm-config.json,config/*,settings/*"],
       "matches": ["<all_urls>"]
     }
   ]
