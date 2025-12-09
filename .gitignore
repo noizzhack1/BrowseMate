@@ -11,5 +11,5 @@ node_modules/
 .DS_Store
 Thumbs.db
 
-# TEMPPPPP
-config/config-llm.json
+
+config/config.json
