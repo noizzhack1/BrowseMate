@@ -42,6 +42,31 @@ let currentAbortController = null;
 /** @type {boolean} */
 let isRequestInProgress = false;
 
+/**
+ * Update send/stop button classes based on request state
+ * @param {boolean} isResponding - Whether a request is in progress
+ */
+function updateButtonClasses(isResponding) {
+  // Base classes for both buttons
+  const baseClasses = 'w-10 h-10 rounded-full flex items-center justify-center transition-all disabled:opacity-50 disabled:cursor-not-allowed';
+  
+  // Update Stop button (shown when responding)
+  if (chatStopBtn) {
+    const stopClasses = isResponding
+      ? `${baseClasses} bg-red-500 hover:bg-red-600 text-white`
+      : baseClasses;
+    chatStopBtn.className = `primary-button chat-input__stop ${stopClasses}`;
+  }
+  
+  // Update Send button (shown when not responding)
+  if (chatSendBtn) {
+    const sendClasses = !isResponding
+      ? `${baseClasses} bg-blue-600 hover:bg-blue-700 text-white`
+      : baseClasses;
+    chatSendBtn.className = `primary-button chat-input__send ${sendClasses}`;
+  }
+}
+
 // =========================
 // Memory manager instance
 // =========================
@@ -421,6 +446,8 @@ async function resendMessageAndReplace(editedText, userMessageWrapper, oldAssist
   // Update UI: show Stop button, hide Send button
   if (chatStopBtn) chatStopBtn.style.display = "inline-flex";
   if (chatSendBtn) chatSendBtn.style.display = "none";
+  // Update button classes based on state
+  updateButtonClasses(true);
   
   // Show loading indicator
   appendMessage("assistant", "Thinking...", false);
@@ -576,6 +603,8 @@ async function resendMessageAndReplace(editedText, userMessageWrapper, oldAssist
     
     if (chatStopBtn) chatStopBtn.style.display = "none";
     if (chatSendBtn) chatSendBtn.style.display = "inline-flex";
+    // Update button classes based on state
+    updateButtonClasses(false);
   }
   
   // Clean up "Thinking..." message
@@ -1385,6 +1414,8 @@ async function handleChatSubmit(event) {
   // Update UI: show Stop button, hide Send button
   if (chatStopBtn) chatStopBtn.style.display = "inline-flex";
   if (chatSendBtn) chatSendBtn.style.display = "none";
+  // Update button classes based on state
+  updateButtonClasses(true);
 
   // Show loading indicator (but don't freeze page yet - only freeze when actions start)
   // Don't save "Thinking..." to memory
@@ -1586,6 +1617,8 @@ async function handleChatSubmit(event) {
     // Update UI: hide Stop button, show Send button
     if (chatStopBtn) chatStopBtn.style.display = "none";
     if (chatSendBtn) chatSendBtn.style.display = "inline-flex";
+    // Update button classes based on state
+    updateButtonClasses(false);
   }
 
   // If we only showed "Thinking..." and no progress/streaming, remove it
@@ -1845,6 +1878,9 @@ async function initChat() {
   if (memoryStatsBtn) {
     memoryStatsBtn.addEventListener("click", handleMemoryStatsClick);
   }
+  
+  // Initialize button classes (not responding initially)
+  updateButtonClasses(false);
 }
 
 if (document.readyState === "loading") {
