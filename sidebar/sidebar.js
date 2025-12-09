@@ -772,17 +772,11 @@ function updateStreamingMessage(messageBody, newContent, append = true) {
  * @param {boolean} includeContext
  * @param {Function} onProgress - Optional callback for progress updates
  * @param {AbortSignal} abortSignal - Signal to cancel the request
-<<<<<<< HEAD
+ * @param {Function} onInteraction - Optional callback for user interactions (question) => Promise<answer>
  * @param {Function} onStreamChunk - Optional callback for streaming answer chunks
  * @returns {Promise<string>}
  */
-async function callLLMAPI(userText, includeContext = false, onProgress = null, abortSignal = null, onStreamChunk = null) {
-=======
- * @param {Function} onInteraction - Optional callback for user interactions (question) => Promise<answer>
- * @returns {Promise<string>}
- */
-async function callLLMAPI(userText, includeContext = false, onProgress = null, abortSignal = null, onInteraction = null) {
->>>>>>> user
+async function callLLMAPI(userText, includeContext = false, onProgress = null, abortSignal = null, onInteraction = null, onStreamChunk = null) {
   console.log('[callLLMAPI] Starting LLM API call');
   console.log('[callLLMAPI] User text:', userText);
   console.log('[callLLMAPI] Include context:', includeContext);
@@ -819,11 +813,7 @@ async function callLLMAPI(userText, includeContext = false, onProgress = null, a
     // Use Task A orchestrator to process the request
     // Task A will determine if it's a question or action and route accordingly
     console.log('[callLLMAPI] Calling processRequest...');
-<<<<<<< HEAD
-    const result = await processRequest(context, userText, onProgress, abortSignal, conversationHistory, onStreamChunk);
-=======
-    const result = await processRequest(context, userText, onProgress, abortSignal, conversationHistory, onInteraction);
->>>>>>> user
+    const result = await processRequest(context, userText, onProgress, abortSignal, conversationHistory, onInteraction, onStreamChunk);
     console.log('[callLLMAPI] ProcessRequest completed');
     
     // Check if request was aborted
@@ -1020,9 +1010,6 @@ async function handleChatSubmit(event) {
       chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
     };
 
-<<<<<<< HEAD
-    reply = await callLLMAPI(value, includeContext, onProgress, abortSignal, onStreamChunk);
-=======
     // Create a callback for user interactions (asking questions during execution)
     const onInteraction = async (question) => {
       console.log('[handleChatSubmit] onInteraction called with question:', question);
@@ -1086,7 +1073,6 @@ async function handleChatSubmit(event) {
     };
 
     reply = await callLLMAPI(value, includeContext, onProgress, abortSignal, onInteraction);
->>>>>>> user
   } catch (error) {
     // Handle cancellation gracefully
     if (abortSignal.aborted || error.message === 'Request cancelled by user') {
