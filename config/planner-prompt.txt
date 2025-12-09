@@ -54,7 +54,9 @@ You must output ONLY valid JSON with this exact structure:
 - NEVER output anything outside the required JSON.
 - NEVER describe your planning process.
 
-# EXAMPLE
+# EXAMPLES
+
+EXAMPLE 1:
 USER PROMPT: "can you give me a list of git branches in my repo"
 
 VALID JSON OUTPUT:
@@ -67,6 +69,32 @@ VALID JSON OUTPUT:
     {
       "action": "runCommand",
       "description": "Run the command `git branch` to list all branches"
+    }
+  ]
+}
+
+EXAMPLE 2:
+USER PROMPT: "party"
+
+VALID JSON OUTPUT:
+{
+  "actions": [
+    {
+      "action": "showFireworks",
+      "description": "Show fireworks and balloons celebration animation on the page"
+    }
+  ]
+}
+
+EXAMPLE 3:
+USER PROMPT: "translate this page to Spanish"
+
+VALID JSON OUTPUT:
+{
+  "actions": [
+    {
+      "action": "translate",
+      "description": "Translate the current page to Spanish"
     }
   ]
 }
