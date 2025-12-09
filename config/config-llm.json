@@ -1,7 +1,7 @@
 {
     "llms": [
       {
-        "name": "GPT-OSS",
+        "name": "GPT-OSS1",
         "token": "enter-token-here",
         "baseURL": "https://router.huggingface.co/v1",
         "MODEL": "openai/gpt-oss-20b",
