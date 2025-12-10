@@ -82,7 +82,7 @@ You MUST respond with valid JSON in ONE of these formats:
 - `zoom` - Zoom page: `{"name": "zoom", "params": {"level": "150%"}}`
 - `translatePage` - Translate page: `{"name": "translatePage", "params": {"targetLanguage": "es"}}`
 - `drag` - Drag and drop: `{"name": "drag", "params": {"sourceSelector": "#src", "targetSelector": "#dst"}}`
-- `showFireworks` - Celebration: `{"name": "showFireworks", "params": {"duration": 2000}}`
+- `showFireworks` - Celebration: `{"name": "showFireworks", "params": {"duration": 5000}}`
 
 ---
 
