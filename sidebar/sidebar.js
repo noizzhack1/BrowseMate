@@ -785,13 +785,16 @@ function createMessageIcons(container, body, role, originalText = null) {
     body.addEventListener("keydown", async (e) => {
       if (!isEditing) return;
       
-      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        // Enter (without Shift) saves and exits edit mode
         e.preventDefault();
         await saveAndResend();
       } else if (e.key === 'Escape') {
+        // Escape cancels editing
         e.preventDefault();
         cancelEditing();
       }
+      // Shift+Enter allows newlines in the editable content
     });
   }
   
@@ -1020,11 +1023,13 @@ function updateStreamingMessage(messageBody, newContent, append = true) {
   if (!messageBody) return;
 
   if (append) {
-    // For streaming, we need to accumulate the full text and re-render
-    const currentText = messageBody.textContent || '';
-    const fullText = currentText + newContent;
+    // Use a data attribute to store raw text, since textContent loses markdown formatting
+    const currentRawText = messageBody.dataset.rawText || '';
+    const fullText = currentRawText + newContent;
+    messageBody.dataset.rawText = fullText;
     messageBody.innerHTML = markdownToHTML(fullText);
   } else {
+    messageBody.dataset.rawText = newContent;
     messageBody.innerHTML = markdownToHTML(newContent);
   }
 
