@@ -200,12 +200,15 @@ export function createStreamingMessage(role, chatMessagesEl, createMessageIconsF
  */
 export function updateStreamingMessage(messageBody, newContent, append = true, chatMessagesEl = null) {
   if (!messageBody) return;
-
+  messageBody.classList.add('text-sm');
   if (append) {
-    const currentText = messageBody.textContent || '';
-    const fullText = currentText + newContent;
+    // Use a data attribute to store raw text, since textContent loses markdown formatting
+    const currentRawText = messageBody.dataset.rawText || '';
+    const fullText = currentRawText + newContent;
+    messageBody.dataset.rawText = fullText;
     messageBody.innerHTML = markdownToHTML(fullText);
   } else {
+    messageBody.dataset.rawText = newContent;
     messageBody.innerHTML = markdownToHTML(newContent);
   }
 

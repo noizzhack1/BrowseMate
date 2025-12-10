@@ -551,52 +551,80 @@ document.getElementById('maxTokens').value =
 
 /**
  * Save settings to Chrome storage
+ * Only saves settings from the currently active tab
  */
 async function saveSettings(event) {
   event.preventDefault();
 
-  const providerRadios = Array.from(document.querySelectorAll('input[name=\"provider\"]'));
-  const checkedProvider = providerRadios.find(r => r.checked) || null;
-
-  const localName = document.getElementById('newModelName').value.trim();
-  const localBaseUrl = document.getElementById('newModelBaseURL').value.trim();
-  const localModel = document.getElementById('newModelMODEL').value.trim();
-
-  // If a local model is configured, treat it as the active provider,
-  // regardless of which radio was previously selected.
-  const hasLocalConfig = !!(localBaseUrl && localModel);
-  const providerType = hasLocalConfig
-    ? 'local'
-    : (checkedProvider && checkedProvider.dataset.provider === 'local' ? 'local' : 'config');
-  const hfModel = hasLocalConfig
-    ? 'LOCAL'
-    : (checkedProvider ? checkedProvider.value : '');
-  const settings = {
-    hfToken: document.getElementById('hfToken').value.trim(),
-    plannerModel: plannerSelect ? plannerSelect.value : '',
-    executorModel: executorSelect ? executorSelect.value : '',
-    maxTokens: parseInt(document.getElementById('maxTokens').value),
-    temperature: parseFloat(document.getElementById('temperature').value),
-mcpServers: currentMCPServers, // Save the current list of MCP servers
-    providerType,
-    localName,
-    localBaseUrl,
-    localModel
-  };
-
-  // Validate token
-  if (!settings.hfToken) {
-    showStatus('Please enter an API token', 'error');
+  // Get the currently active tab
+  const activeTab = getActiveTab();
+  if (!activeTab) {
+    showStatus('Unable to determine active tab', 'error');
     return;
   }
 
-  if (!settings.plannerModel || !settings.executorModel) {
-    showStatus('Please select both planner and executor models', 'error');
-    return;
+  // Load existing settings first to preserve settings from other tabs
+  let existingSettings = DEFAULT_SETTINGS;
+  try {
+    const result = await chrome.storage.sync.get(SETTINGS_KEY);
+    if (result[SETTINGS_KEY]) {
+      existingSettings = { ...DEFAULT_SETTINGS, ...result[SETTINGS_KEY] };
+    }
+  } catch (error) {
+    console.warn('[saveSettings] Error loading existing settings:', error);
+  }
+
+  // Initialize settings object with existing values
+  const settings = { ...existingSettings };
+
+  if (activeTab === 'llm') {
+    // Save only LLM Configuration tab settings
+    const providerRadios = Array.from(document.querySelectorAll('input[name=\"provider\"]'));
+    const checkedProvider = providerRadios.find(r => r.checked) || null;
+
+    const localName = document.getElementById('newModelName').value.trim();
+    const localBaseUrl = document.getElementById('newModelBaseURL').value.trim();
+    const localModel = document.getElementById('newModelMODEL').value.trim();
+
+    // If a local model is configured, treat it as the active provider,
+    // regardless of which radio was previously selected.
+    const hasLocalConfig = !!(localBaseUrl && localModel);
+    const providerType = hasLocalConfig
+      ? 'local'
+      : (checkedProvider && checkedProvider.dataset.provider === 'local' ? 'local' : 'config');
+    const hfModel = hasLocalConfig
+      ? 'LOCAL'
+      : (checkedProvider ? checkedProvider.value : '');
+
+    // Update only LLM-related settings
+    settings.hfToken = document.getElementById('hfToken').value.trim();
+    settings.plannerModel = plannerSelect ? plannerSelect.value : '';
+    settings.executorModel = executorSelect ? executorSelect.value : '';
+    settings.maxTokens = parseInt(document.getElementById('maxTokens').value);
+    settings.temperature = parseFloat(document.getElementById('temperature').value);
+    settings.providerType = providerType;
+    settings.localName = localName;
+    settings.localBaseUrl = localBaseUrl;
+    settings.localModel = localModel;
+
+    // Validate LLM tab fields
+    if (!settings.hfToken) {
+      showStatus('Please enter an API token', 'error');
+      return;
+    }
+
+    if (!settings.plannerModel || !settings.executorModel) {
+      showStatus('Please select both planner and executor models', 'error');
+      return;
+    }
+  } else if (activeTab === 'mcp') {
+    // Save only MCP Servers tab settings
+    // Preserve mcpServers if it exists, otherwise use currentMCPServers
+    settings.mcpServers = currentMCPServers;
   }
 
   // Show saving notification
-  console.log('[saveSettings] Showing saving notification');
+  console.log('[saveSettings] Saving settings for tab:', activeTab);
   showStatus('Saving settings...', 'success');
   
   // Disable save button during save operation
@@ -609,8 +637,8 @@ mcpServers: currentMCPServers, // Save the current list of MCP servers
     await chrome.storage.sync.set({ [SETTINGS_KEY]: settings });
     console.log('[saveSettings] Settings saved to storage');
 
-    // Update the LLM client with new settings
-    if (llmClient.isInitialized && llmClient.currentLLM) {
+    // Update the LLM client with new settings (only if LLM tab was saved)
+    if (activeTab === 'llm' && llmClient.isInitialized && llmClient.currentLLM) {
       llmClient.currentLLM.token = settings.hfToken;
     }
 
@@ -826,6 +854,15 @@ async function handleBackToSite() {
 // Tab switching functionality
 const tabButtons = document.querySelectorAll('.tab-btn');
 const tabPanels = document.querySelectorAll('.tab-panel');
+
+/**
+ * Get the currently active tab ID
+ * @returns {string|null} The active tab ID or null if none found
+ */
+function getActiveTab() {
+  const activeBtn = Array.from(tabButtons).find(btn => btn.classList.contains('active'));
+  return activeBtn ? activeBtn.dataset.tab : null;
+}
 
 function switchTab(tabId) {
   // Update button states

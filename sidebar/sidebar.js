@@ -348,12 +348,12 @@ async function resendMessageAndReplace(editedText, userMessageWrapper, oldAssist
       
       if (!progressMessageEl) {
         const progressWrapper = document.createElement("div");
-        progressWrapper.className = "message-wrapper";
+        progressWrapper.className = "message-wrapper flex justify-start";
         
         progressContainer = document.createElement("div");
-        progressContainer.className = "message message--assistant bg-white text-slate-800 border border-slate-200";
+        progressContainer.className = "message message--assistant max-w-[80%] px-4 py-2 rounded-lg bg-white text-slate-800 border border-slate-200";
         progressMessageEl = document.createElement("div");
-        progressMessageEl.className = "message__body";
+        progressMessageEl.className = "message__body text-sm";
         progressContainer.appendChild(progressMessageEl);
         
         progressWrapper.appendChild(progressContainer);
@@ -785,13 +785,16 @@ function createMessageIcons(container, body, role, originalText = null) {
     body.addEventListener("keydown", async (e) => {
       if (!isEditing) return;
       
-      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        // Enter (without Shift) saves and exits edit mode
         e.preventDefault();
         await saveAndResend();
       } else if (e.key === 'Escape') {
+        // Escape cancels editing
         e.preventDefault();
         cancelEditing();
       }
+      // Shift+Enter allows newlines in the editable content
     });
   }
   
@@ -885,17 +888,19 @@ function appendMessage(role, text, saveToMemory = true) {
 
   // Create wrapper for message and copy icon (copy icon outside message border)
   const messageWrapper = document.createElement("div");
-  messageWrapper.className = `message-wrapper message-wrapper--${role}`;
+  // Add flex and justify classes based on role (user: justify-end, assistant: justify-start)
+  const wrapperFlexClass = role === 'user' ? 'flex justify-end' : 'flex justify-start';
+  messageWrapper.className = `message-wrapper message-wrapper--${role} ${wrapperFlexClass}`;
 
   const container = document.createElement("div");
   // Add Tailwind classes based on message role
   const roleClasses = role === 'user'
     ? 'bg-gradient-to-br from-purple-500 via-blue-500 to-cyan-500 text-white'
     : 'bg-white text-slate-800 border border-slate-200';
-  container.className = `message message--${role} ${roleClasses}`;
+  container.className = `message message--${role} max-w-[80%] px-4 py-2 rounded-lg ${roleClasses}`;
 
   const body = document.createElement("div");
-  body.className = "message__body";
+  body.className = "message__body text-sm";
   // Render markdown for assistant messages, plain text for user messages
   if (role === 'assistant') {
     body.innerHTML = markdownToHTML(text);
@@ -977,17 +982,19 @@ function createStreamingMessage(role) {
 
   // Create wrapper for message and copy icon (copy icon outside message border)
   const messageWrapper = document.createElement("div");
-  messageWrapper.className = `message-wrapper message-wrapper--${role}`;
+  // Add flex and justify classes based on role (user: justify-end, assistant: justify-start)
+  const wrapperFlexClass = role === 'user' ? 'flex justify-end' : 'flex justify-start';
+  messageWrapper.className = `message-wrapper message-wrapper--${role} ${wrapperFlexClass}`;
 
   const container = document.createElement("div");
   // Add Tailwind classes based on message role
   const roleClasses = role === 'user'
     ? 'bg-gradient-to-br from-purple-500 via-blue-500 to-cyan-500 text-white'
     : 'bg-white text-slate-800 border border-slate-200';
-  container.className = `message message--${role} ${roleClasses}`;
+  container.className = `message message--${role} max-w-[80%] px-4 py-2 rounded-lg ${roleClasses}`;
 
   const body = document.createElement("div");
-  body.className = "message__body";
+  body.className = "message__body text-sm";
   body.textContent = "";
 
   container.appendChild(body);
@@ -1020,11 +1027,13 @@ function updateStreamingMessage(messageBody, newContent, append = true) {
   if (!messageBody) return;
 
   if (append) {
-    // For streaming, we need to accumulate the full text and re-render
-    const currentText = messageBody.textContent || '';
-    const fullText = currentText + newContent;
+    // Use a data attribute to store raw text, since textContent loses markdown formatting
+    const currentRawText = messageBody.dataset.rawText || '';
+    const fullText = currentRawText + newContent;
+    messageBody.dataset.rawText = fullText;
     messageBody.innerHTML = markdownToHTML(fullText);
   } else {
+    messageBody.dataset.rawText = newContent;
     messageBody.innerHTML = markdownToHTML(newContent);
   }
 
@@ -1265,7 +1274,7 @@ async function handleChatSubmit(event) {
         progressContainer = document.createElement("div");
         progressContainer.className = "message message--assistant bg-white text-slate-800 border border-slate-200";
         progressMessageEl = document.createElement("div");
-        progressMessageEl.className = "message__body";
+        progressMessageEl.className = "message__body text-sm";
         progressContainer.appendChild(progressMessageEl);
         
         // Add message to wrapper
