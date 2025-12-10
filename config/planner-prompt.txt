@@ -84,6 +84,7 @@ Before planning navigation:
 1. **Check the CURRENT PAGE CONTEXT**
 2. **Skip navigation** if already on the target site
 3. **Only navigate** if user needs a different page
+4. the content of the page can be in different languages , especilly hebrew or english , be aware of the language when reading the page content
 
 | Current Page | User Request | Action |
 |--------------|--------------|--------|
