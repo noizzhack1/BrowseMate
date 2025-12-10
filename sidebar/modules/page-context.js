@@ -72,9 +72,11 @@ export async function setPageFrozen(freeze) {
       return;
     }
 
+    const parrotCursor = chrome.runtime.getURL('icons/logo_loader.gif'); // Resolve the extension URL for the parrot.gif cursor so it can be used safely inside the injected script
+
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      func: (shouldFreeze) => {
+      func: (shouldFreeze, parrotCursor) => {
         const OVERLAY_ID = "__browsemate_page_freeze_overlay";
         const STYLE_ID = "__browsemate_freeze_style";
         const body = document.body;
@@ -104,17 +106,39 @@ export async function setPageFrozen(freeze) {
             (document.head || document.documentElement).appendChild(styleEl);
           }
 
-          const overlay = document.createElement("div");
-          overlay.id = OVERLAY_ID;
-          overlay.className = "commet-freeze-border";
-          Object.assign(overlay.style, {
-            position: "fixed",
-            inset: "0",
-            zIndex: "2147483646",
-            pointerEvents: "auto",
-            cursor: "wait",
-            background: "rgba(15, 23, 42, 0.03)"
+          const overlay = document.createElement("div"); // Create an overlay element that will visually freeze the page
+          overlay.id = OVERLAY_ID; // Assign a stable ID so we can detect and remove this overlay later
+          overlay.className = "commet-freeze-border"; // Apply the animated border class defined in the injected style element
+          Object.assign(overlay.style, { // Apply layout and interaction styles to the overlay
+            position: "fixed", // Pin overlay to the viewport so it covers the entire visible page
+            inset: "0", // Stretch overlay from edge to edge
+            zIndex: "2147483646", // Keep overlay above almost all page content while still below browser UI
+            pointerEvents: "auto", // Ensure the overlay intercepts pointer events to effectively freeze the page
+            cursor: "none", // Hide the native cursor so we can render a fake animated cursor instead
+            background: "rgba(15, 23, 42, 0.03)" // Use a subtle tint to visually indicate the frozen state
           });
+
+          const parrotCursorImg = document.createElement("img"); // Create an image element that will act as the fake animated cursor
+          parrotCursorImg.src = parrotCursor; // Point the image to the extension-hosted parrot.gif URL
+          parrotCursorImg.alt = ""; // Empty alt text since this is a purely decorative cursor element
+          Object.assign(parrotCursorImg.style, { // Style the fake cursor image
+            position: "fixed", // Position relative to the viewport so it follows the pointer accurately
+            width: "70px", // Set an explicit width so the cursor size is predictable
+            height: "70px", // Set an explicit height to match the visual cursor dimensions
+            pointerEvents: "none", // Ensure the fake cursor does not block clicks or hovers
+            zIndex: "2147483647", // Keep the fake cursor above the freeze overlay for visibility
+            left: "0px", // Initial left position; will be updated on mousemove
+            top: "0px", // Initial top position; will be updated on mousemove
+            transform: "translate(-16px, -16px)" // Offset the image so its center (16,16) aligns roughly with the pointer hotspot
+          });
+
+          const handleParrotMove = (event) => { // Handler to move the fake cursor image with the mouse
+            parrotCursorImg.style.left = event.clientX + "px"; // Align fake cursor horizontally with the current mouse X coordinate
+            parrotCursorImg.style.top = event.clientY + "px"; // Align fake cursor vertically with the current mouse Y coordinate
+          };
+
+          overlay.addEventListener("mousemove", handleParrotMove); // Update the fake cursor position whenever the mouse moves over the overlay
+          overlay.appendChild(parrotCursorImg); // Attach the fake cursor image to the overlay so it is rendered on top of the page
 
           body.style.pointerEvents = "none";
           body.style.userSelect = "none";
@@ -129,7 +153,7 @@ export async function setPageFrozen(freeze) {
           document.documentElement.style.overflow = "";
         }
       },
-      args: [freeze]
+      args: [freeze, parrotCursor]
     });
   } catch (error) {
     console.error("Error freezing page:", error);
