@@ -53,7 +53,8 @@
         "lib/llm-client.js",
         "lib/action-tools.js",
         "config/*",
-        "settings/*"
+        "settings/*",
+        "icons/logo_loader.gif"
       ],
       "matches": ["<all_urls>"]
     }
