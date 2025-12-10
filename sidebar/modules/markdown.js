@@ -119,8 +119,10 @@ export function markdownToHTML(markdown) {
       listType = null;
     }
 
-    // Regular text line
-    processedLines.push(`<span>${trimmedLine}</span>`);
+    // Regular text line - add as paragraph for proper spacing
+    if (trimmedLine) {
+      processedLines.push(`<p style="margin:4px 0;">${trimmedLine}</p>`);
+    }
   }
 
   // Close any open list
@@ -128,7 +130,7 @@ export function markdownToHTML(markdown) {
     processedLines.push(`</${listType}>`);
   }
 
-  // Join without adding extra breaks between block elements
+  // Join all processed lines
   html = processedLines.join('');
 
   return html;
