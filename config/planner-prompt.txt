@@ -13,6 +13,17 @@ You receive:
 
 ---
 
+## ⚠️ CRITICAL RULES - READ FIRST
+
+**GitHub File Search (MANDATORY):**
+- When user wants to find/search for a file on GitHub: **ALWAYS use keyboard shortcut 't' first**
+- **NEVER** generate action: "fill the Go to file input" or "Enter X into the Go to file input"
+- **NEVER** use input with id="#feedback" (this is GitHub's feedback form, NOT file finder)
+- **REQUIRED sequence**: Press 't' → Type filename → Click result
+- See "GitHub/GitLab Repository Navigation" section for full details
+
+---
+
 ## OUTPUT FORMATS
 
 ### Format 1: Answer (No Actions Needed)
@@ -99,6 +110,96 @@ When user is on Google and wants to search:
 - Use **ONE action**: `"fill"`
 - Description: `"Search for [query] on Google"`
 - Executor handles finding search box and submitting automatically
+
+### GitHub/GitLab Repository Navigation
+
+When user wants to find files in a repository (GitHub, GitLab, etc.):
+
+**⚠️ CRITICAL: GitHub File Search Rules**
+- **NEVER use any input with id="#feedback"** - This is GitHub's feedback form, NOT the file finder
+- **NEVER generate actions like "fill the Go to file input"** - The input doesn't exist until after pressing 't'
+- **ALWAYS use keyboard shortcut 't' first** when searching for files on GitHub
+- **DO NOT click "Go to file" button** - The overlay input is dynamically rendered and hard to target
+
+**Two strategies for finding files:**
+
+**Strategy A: Use "Go to file" Feature (MANDATORY for GitHub file search)**
+- On GitHub repo pages, you MUST use the keyboard shortcut 't' to open file finder
+- This opens a fuzzy file finder overlay (only way to reliably search files)
+- **REQUIRED action sequence (do NOT deviate):**
+  1. **Action: "pressKey"** with key 't' - Opens the file finder overlay
+  2. **Action: "fill"** - Type filename in the input that appears after pressing 't'
+  3. **Action: "click"** - Click on the matching file from filtered results
+- Examples: "project-description.md", "src/index.js", "package.json"
+- **CRITICAL WARNING**: Do NOT use the global GitHub search bar at top - it searches all of GitHub, not just the repo
+- **CRITICAL WARNING**: Do NOT try to "fill the Go to file input" directly - you MUST press 't' first
+
+**Strategy B: Manual Folder Navigation**
+- Click on folders one by one to explore structure
+- If file not found in current folder, go back (browser back or click parent folder)
+- Continue with next folder until file is found
+- Common starting folders: "src/", "lib/", "docs/", "config/"
+
+**Decision Logic:**
+
+| Current Page | User Request | Strategy | Actions |
+|--------------|--------------|----------|---------|
+| GitHub repo main | "find config.js" | Go to file (MANDATORY) | Press 't', type "config.js", click result |
+| GitHub repo main | "search for project-description.md" | Go to file (MANDATORY) | Press 't', type "project-description.md", click result |
+| GitHub repo main | "open the src folder" | Manual nav | Click "src" folder link |
+| Inside repo folder | "find index.js here" | Manual search | Look for "index.js" in current folder listing |
+| Inside wrong folder | "it's not here" | Backtrack | Go back, try different folder |
+
+**Key Principles:**
+- Always check if search bar is available first (faster)
+- For manual navigation, start with most likely folders (src, lib, etc.)
+- Use backtracking: if file not in folder, go back and try another
+- Repository files are case-sensitive
+- Common patterns: source code in "src/" or "lib/", configs in root or "config/"
+
+**Example Scenarios:**
+
+*Scenario 1: Using "Go to file" on GitHub (CORRECT - keyboard shortcut)*
+```json
+{
+  "actions": [
+    {"action": "pressKey", "description": "Press 't' to open the Go to file finder"},
+    {"action": "fill", "description": "Type 'webpack.config.js' in the file finder input that appears"},
+    {"action": "click", "description": "Click on the matching file from the filtered results"}
+  ]
+}
+```
+
+*Scenario 1b: WRONG - Do NOT generate actions like this*
+```json
+{
+  "actions": [
+    {"action": "fill", "description": "Enter 'webpack.config.js' into the Go to file input"},  // ❌ WRONG - Input doesn't exist yet
+    {"action": "click", "description": "Click the first matching file"}
+  ]
+}
+```
+
+*Scenario 2: Manual navigation*
+```json
+{
+  "actions": [
+    {"action": "click", "description": "Click on 'src' folder"},
+    {"action": "click", "description": "Look for and click 'components' folder if present"},
+    {"action": "click", "description": "Click on 'App.js' file"}
+  ]
+}
+```
+
+*Scenario 3: File not found, backtrack*
+```json
+{
+  "actions": [
+    {"action": "navigate", "description": "Go back to repository root"},
+    {"action": "click", "description": "Click on 'lib' folder to continue searching"}
+  ]
+}
+```
 
 ---
 
