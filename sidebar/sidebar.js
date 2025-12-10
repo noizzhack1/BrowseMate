@@ -478,6 +478,8 @@ async function resendMessageAndReplace(editedText, userMessageWrapper, oldAssist
   } else if (reply && reply.trim()) {
     appendMessage("assistant", reply);
   }
+  // Switch agent activity to minimal view after final response is rendered
+  setAgentActivityMinimal(true);
 }
 
 /**
@@ -1049,6 +1051,15 @@ let agentActivityBody = null;
 let agentActivityStepCount = 0;
 
 /**
+ * Toggle minimal styling on the current agent activity container
+ * @param {boolean} isMinimal
+ */
+function setAgentActivityMinimal(isMinimal) {
+  if (!agentActivityContainer) return;
+  agentActivityContainer.classList.toggle('agent-activity--minimal', isMinimal);
+}
+
+/**
  * Get or create the agent activity container
  * This is a single collapsible container that groups all thinking and actions
  * @returns {HTMLElement} The agent activity container
@@ -1106,6 +1117,7 @@ function getOrCreateAgentActivityContainer() {
   agentActivityContainer = wrapper;
   agentActivityBody = body;
   agentActivityStepCount = 0;
+  setAgentActivityMinimal(false);
 
   return wrapper;
 }
@@ -1659,6 +1671,8 @@ async function handleChatSubmit(event) {
     // Only append new message if we didn't have progress updates or streaming
     appendMessage("assistant", reply);
   }
+  // Switch agent activity to minimal view after final response is rendered
+  setAgentActivityMinimal(true);
 }
 
 // autoResizeTextArea is imported from ./modules/ui-utils.js

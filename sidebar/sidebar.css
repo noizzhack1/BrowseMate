@@ -774,7 +774,7 @@ button {
 }
 
 .agent-activity-arrow {
-  margin-left: auto;
+  margin-left: 4px; /* bring arrow closer to count */
   font-size: 10px;
   color: #6366f1;
   transition: transform 0.2s ease;
@@ -782,6 +782,24 @@ button {
 
 .agent-activity-arrow.expanded {
   transform: rotate(90deg);
+}
+
+/* Minimal view overrides (applied after final response) */
+.agent-activity--minimal .message--agent-activity {
+  background: transparent;
+  border: none;
+}
+
+.agent-activity--minimal .agent-activity-header {
+  background: transparent;
+}
+
+.agent-activity--minimal .agent-activity-header:hover {
+  background: transparent;
+}
+
+.agent-activity--minimal .agent-activity-icon {
+  display: none;
 }
 
 /* Agent activity body (collapsible content) */
