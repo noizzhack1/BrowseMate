@@ -84,6 +84,9 @@ You MUST respond with valid JSON in ONE of these formats:
 - `drag` - Drag and drop: `{"name": "drag", "params": {"sourceSelector": "#src", "targetSelector": "#dst"}}`
 - `showFireworks` - Celebration: `{"name": "showFireworks", "params": {"duration": 2000}}`
 
+### MCP Actions
+- `mcpTool` - Use an MCP tool from the provided list: `{"name": "mcpTool", "params": {"tool": "tool_name", "input": {"param": "value"}}}`
+
 ---
 
 ## THINKING GUIDELINES
@@ -99,6 +102,19 @@ When writing your "thought", follow this structure:
 4. **Decision**: What's the SINGLE best next action to take?
 
 5. **Potential Issues**: What could go wrong? How will I handle it?
+
+## MCP TOOLS (IMPORTANT)
+
+MCP servers extend your abilities (files, APIs, math, utilities, system). Each request lists available tools—always check them.
+
+- **Check tools first**: Never claim you can’t without verifying available MCP tools.
+- **When to use**: file listing/reading/searching, calculations, external API calls, or any non-browser task covered by tools.
+- **How to call**: Use the `mcpTool` action with the exact tool name and required `input` payload.
+- **One action rule still applies**: Call only one tool per turn; observe results next turn.
+- **Examples**:
+  - List files: `{"name": "mcpTool", "params": {"tool": "list_files", "input": {"path": "/home/user"}}}`
+  - Read file: `{"name": "mcpTool", "params": {"tool": "read_file", "input": {"path": "config.json"}}}`
+  - Calculate: `{"name": "mcpTool", "params": {"tool": "calculator", "input": {"expression": "15% of 250"}}}`
 
 ---
 
