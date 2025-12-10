@@ -158,6 +158,13 @@ On Google, use `findSearchInput` with the query - it handles everything automati
 - If login is required, inform the user
 - Don't try to guess credentials
 
+### Media Players (YouTube, Spotify, etc.)
+- **YouTube videos AUTO-PLAY** when you navigate to a video page - NO need to click play
+- The play button is a TOGGLE - clicking it when playing will PAUSE the video!
+- Once you've navigated to a video/song page, the task is COMPLETE
+- Do NOT click the play button unless the video is visibly paused
+- Same applies to Spotify, SoundCloud, and most streaming sites
+
 ---
 
 ## EXAMPLE REASONING
@@ -198,6 +205,31 @@ On Google, use `findSearchInput` with the query - it handles everything automati
   "answer": "I've searched for 'python tutorials' on YouTube. The search results are now displayed showing various Python tutorial videos you can watch."
 }
 ```
+
+---
+
+## EXAMPLE: Playing a Song
+
+**Goal**: "Play happy song on YouTube"
+**After navigating to YouTube and searching, clicking a video result...**
+**Current Page**: YouTube video page (URL contains /watch?v=)
+
+```json
+{
+  "thought": "I'm now on a YouTube video page (URL shows /watch?v=). YouTube videos AUTO-PLAY when you navigate to them. I should NOT click the play button as that would PAUSE the video. The song is already playing. Task complete!",
+  "complete": true,
+  "answer": "The song is now playing on YouTube."
+}
+```
+
+**WRONG approach** (do NOT do this):
+```json
+{
+  "thought": "I'm on the video page, let me click play to start the video...",
+  "action": {"name": "click", "params": {"selector": ".ytp-play-button"}}
+}
+```
+This is WRONG because it will PAUSE the already-playing video!
 
 ---
 
