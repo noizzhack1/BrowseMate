@@ -64,67 +64,23 @@
         </div>
       </div>
 
-      <!-- Planner / Executor model selection populated from llm-config.json (and any user-added models) -->
-      <div class="form-group">
-        <label for="plannerModel">Planner model</label>
-        <select id="plannerModel" name="plannerModel">
-          <!-- Options loaded dynamically -->
-        </select>
-        <small>Model used for planning and deciding what actions to take.</small>
-      </div>
+      <!-- Model Configuration Sections -->
+      <div class="model-sections">
+        <!-- Planner Model Section -->
+        <div id="plannerSectionContainer" class="model-section-container">
+          <!-- Planner section will be dynamically created here -->
+        </div>
 
-      <div class="form-group">
-        <label for="executorModel">Executor model</label>
-        <select id="executorModel" name="executorModel">
-          <!-- Options loaded dynamically -->
-        </select>
-        <small>Model used for DOM automation / executor.</small>
+        <!-- Executor Model Section -->
+        <div id="executorSectionContainer" class="model-section-container">
+          <!-- Executor section will be dynamically created here -->
+        </div>
       </div>
 
       <div class="form-group">
         <button type="button" id="addModelBtn" class="btn btn-secondary">
           Add new model
         </button>
-      </div>
-
-      <div class="form-group">
-        <label for="hfToken">API Token *</label>
-        <input
-          type="password"
-          id="hfToken"
-          name="hfToken"
-          placeholder="Enter your API token"
-          required
-        />
-        <small>Enter the API token to use when a model does not define its own token.</small>
-        <button type="button" id="testBtn" class="btn btn-secondary btn--margin-top">Test Connection</button>
-      </div>
-
-      <div class="form-group">
-        <label for="maxTokens">Max Tokens</label>
-        <input
-          type="number"
-          id="maxTokens"
-          name="maxTokens"
-          value="1024"
-          min="100"
-          max="4096"
-        />
-        <small>Maximum number of tokens to generate (100-4096)</small>
-      </div>
-
-      <div class="form-group">
-        <label for="temperature">Temperature</label>
-        <input
-          type="number"
-          id="temperature"
-          name="temperature"
-          value="0.7"
-          min="0"
-          max="2"
-          step="0.1"
-        />
-        <small>Controls randomness: 0 = focused, 2 = creative (0-2)</small>
       </div>
       </div><!-- End LLM Configuration Tab -->
 

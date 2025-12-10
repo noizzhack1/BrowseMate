@@ -5,7 +5,6 @@ const llmClient = window.llmClient;
 
 const settingsForm = document.getElementById('settingsForm');
 const statusMessage = document.getElementById('statusMessage');
-const testBtn = document.getElementById('testBtn');
 const backToSiteBtn = document.getElementById('backToSiteBtn');
 
 // Store timeout ID for clearing auto-hide
@@ -23,11 +22,21 @@ const mcpAuthHeaderFields = document.getElementById('mcpAuthHeaderFields');
 
 // Default settings
 const DEFAULT_SETTINGS = {
-  hfToken: '',
+  hfToken: '', // Kept for backward compatibility
   selectedLLM: '',
   // New planner / executor model fields (used going forward)
   plannerModel: '',
-  executorModel: '',
+  plannerToken: '', // Separate token for planner model
+  plannerTemperature: 0.7, // Temperature for planner model
+  plannerMaxTokens: 2000, // Max tokens for planner model
+  plannerIsOpen: false, // Whether planner section is open
+  executorModel: '', // Single executor model
+  executorToken: '', // Separate token for executor model
+  executorTemperature: 0.7, // Temperature for executor model
+  executorMaxTokens: 2000, // Max tokens for executor model
+  executorIsOpen: false, // Whether executor section is open
+  executorModels: [], // Array for backward compatibility (single executor)
+  // Legacy fields for backward compatibility
   maxTokens: 2000,
   temperature: 0.7,
   mcpServers: null // Changed from [] to null to detect if set
@@ -37,9 +46,20 @@ const DEFAULT_SETTINGS = {
 let currentMCPServers = [];
 let editingServerIndex = -1;
 
-// Planner / executor dropdowns
-const plannerSelect = document.getElementById('plannerModel');
-const executorSelect = document.getElementById('executorModel');
+// Model sections containers
+const plannerSectionContainer = document.getElementById('plannerSectionContainer');
+const executorSectionContainer = document.getElementById('executorSectionContainer');
+
+// Track model sections
+let plannerSectionId = null; // Only one planner allowed
+let executorSectionId = null; // Only one executor allowed
+let availableModels = []; // Store available models for dropdowns
+
+// Track manually edited tokens (to prevent auto-overwrite)
+let manuallyEditedTokens = new Set(); // Set of section IDs with manually edited tokens
+
+// Track section open/closed state
+let sectionStates = {}; // {sectionId: {isOpen: boolean, ...}}
 
 // Add-new-model UI
 const newModelForm = document.getElementById('newModelForm');
@@ -73,7 +93,7 @@ try {
 
 /**
  * Load available models from config (llm-config.json + any user-added models)
- * and populate the planner / executor dropdowns.
+ * and store them for use in dynamic dropdowns.
  */
 async function loadAvailableModels() {
   try {
@@ -86,26 +106,8 @@ async function loadAvailableModels() {
         ? llmClient.config.llms
         : [];
 
-    // Clear existing options
-    if (plannerSelect) plannerSelect.innerHTML = '';
-    if (executorSelect) executorSelect.innerHTML = '';
-
-    // Populate both dropdowns with the same model list using the name as display value
-    allModels.forEach((model) => {
-      if (!model || !model.name) return;
-      if (plannerSelect) {
-        const option = document.createElement('option');
-        option.value = model.name;
-        option.textContent = model.name;
-        plannerSelect.appendChild(option);
-      }
-      if (executorSelect) {
-        const option = document.createElement('option');
-        option.value = model.name;
-        option.textContent = model.name;
-        executorSelect.appendChild(option);
-      }
-    });
+    // Store models for use in dynamic sections
+    availableModels = allModels;
 
     return allModels;
   } catch (error) {
@@ -113,6 +115,320 @@ async function loadAvailableModels() {
     return [];
   }
 }
+
+/**
+ * Get a model's default token by name
+ * @param {string} modelName - The model name
+ * @returns {string} The default token for the model, or empty string if not found
+ */
+function getModelDefaultToken(modelName) {
+  if (!modelName) return '';
+  const model = availableModels.find(m => m && m.name === modelName);
+  return model && model.token ? model.token : '';
+}
+
+/**
+ * Populate a model select dropdown with available models
+ * @param {HTMLSelectElement} selectElement - The select element to populate
+ * @param {string} selectedValue - The value to pre-select
+ */
+function populateModelSelect(selectElement, selectedValue = '') {
+  if (!selectElement) return;
+  
+  selectElement.innerHTML = '';
+  availableModels.forEach((model) => {
+    if (!model || !model.name) return;
+    const option = document.createElement('option');
+    option.value = model.name;
+    option.textContent = model.name;
+    if (model.name === selectedValue) {
+      option.selected = true;
+    }
+    selectElement.appendChild(option);
+  });
+}
+
+/**
+ * Create a collapsible model configuration section HTML
+ * @param {string} type - 'planner' or 'executor'
+ * @param {string} sectionId - Unique ID for this section
+ * @param {string} modelName - Pre-selected model name
+ * @param {string} token - Pre-filled token value
+ * @param {number} temperature - Pre-filled temperature value
+ * @param {number} maxTokens - Pre-filled max tokens value
+ * @param {boolean} isOpen - Whether the section should be open initially
+ * @returns {HTMLElement} The created section element
+ */
+function createModelSection(type, sectionId, modelName = '', token = '', temperature = 0.7, maxTokens = 2000, isOpen = false) {
+  const isPlanner = type === 'planner';
+  const section = document.createElement('div');
+  section.className = 'model-section-accordion';
+  section.dataset.sectionId = sectionId;
+  section.dataset.modelType = type;
+
+  const modelLabel = isPlanner ? 'Planner model' : 'Executor model';
+  const modelDescription = isPlanner 
+    ? 'Model used for planning and deciding what actions to take.'
+    : 'Model used for DOM automation / executor.';
+
+  // Store initial state
+  sectionStates[sectionId] = { isOpen: isOpen };
+
+  section.innerHTML = `
+    <div class="model-section-header" style="padding: 12px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 5px; cursor: pointer; user-select: none; display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span class="section-toggle-icon" style="transition: transform 0.3s;">${isOpen ? '▼' : '▶'}</span>
+        <h3 style="margin: 0; font-size: 16px;">${modelLabel}</h3>
+      </div>
+    </div>
+    <div class="model-section-content" style="padding: 15px; border: 1px solid #ddd; border-top: none; border-radius: 0 0 5px 5px; background: #f9f9f9; display: ${isOpen ? 'block' : 'none'}; overflow: hidden; transition: max-height 0.3s ease-in-out;">
+      <div class="form-group">
+        <label for="${sectionId}-model">Model name</label>
+        <select id="${sectionId}-model" name="${sectionId}-model" class="model-select">
+          <!-- Options loaded dynamically -->
+        </select>
+        <small>${modelDescription}</small>
+      </div>
+      <div class="form-group">
+        <label for="${sectionId}-token">API Token *</label>
+        <input
+          type="password"
+          id="${sectionId}-token"
+          name="${sectionId}-token"
+          class="model-token-input"
+          placeholder="Enter your API token"
+          value="${token}"
+          required
+        />
+        <small>Enter the API token for this model.</small>
+      </div>
+      <div class="form-group">
+        <label for="${sectionId}-temperature">Temperature</label>
+        <input
+          type="number"
+          id="${sectionId}-temperature"
+          name="${sectionId}-temperature"
+          class="model-temperature-input"
+          value="${temperature}"
+          min="0"
+          max="2"
+          step="0.1"
+        />
+        <small>Controls randomness: 0 = focused, 2 = creative (0-2)</small>
+      </div>
+      <div class="form-group">
+        <label for="${sectionId}-maxTokens">Max Tokens</label>
+        <input
+          type="number"
+          id="${sectionId}-maxTokens"
+          name="${sectionId}-maxTokens"
+          class="model-max-tokens-input"
+          value="${maxTokens}"
+          min="100"
+          max="4096"
+        />
+        <small>Maximum number of tokens to generate (100-4096)</small>
+      </div>
+      <div class="form-group">
+        <button type="button" class="btn btn-secondary model-test-btn" data-section-id="${sectionId}">Test Connection</button>
+      </div>
+    </div>
+  `;
+
+  // Populate the model select dropdown
+  const selectElement = section.querySelector(`#${sectionId}-model`);
+  populateModelSelect(selectElement, modelName);
+  
+  // Track manual token edits and auto-populate on model change
+  const tokenInput = section.querySelector(`#${sectionId}-token`);
+  if (tokenInput) {
+    // Mark as manually edited when user types
+    tokenInput.addEventListener('input', () => {
+      manuallyEditedTokens.add(sectionId);
+    });
+    
+    // Check if current token matches model's default token
+    const checkTokenMatch = () => {
+      const currentModelName = selectElement.value;
+      const currentToken = tokenInput.value.trim();
+      const modelDefaultToken = getModelDefaultToken(currentModelName);
+      if (currentToken === modelDefaultToken) {
+        // Token matches default, remove from manually edited set
+        manuallyEditedTokens.delete(sectionId);
+      }
+    };
+    
+    // Check on initial load
+    checkTokenMatch();
+    
+    // Add change listener to auto-populate token when model is selected
+    if (selectElement) {
+      selectElement.addEventListener('change', () => {
+        const selectedModelName = selectElement.value;
+        if (!manuallyEditedTokens.has(sectionId)) {
+          // Only auto-populate if token wasn't manually edited
+          const defaultToken = getModelDefaultToken(selectedModelName);
+          tokenInput.value = defaultToken;
+          // Clear manual edit flag if token matches default
+          manuallyEditedTokens.delete(sectionId);
+        } else {
+          // Token was manually edited, but check if it now matches the new model's default
+          checkTokenMatch();
+        }
+      });
+    }
+  }
+
+  // Add toggle functionality to header
+  const header = section.querySelector('.model-section-header');
+  const content = section.querySelector('.model-section-content');
+  const toggleIcon = section.querySelector('.section-toggle-icon');
+  
+  header.addEventListener('click', () => {
+    toggleSection(sectionId);
+  });
+
+  const testBtn = section.querySelector('.model-test-btn');
+  if (testBtn) {
+    testBtn.addEventListener('click', () => {
+      const modelName = selectElement.value;
+      const tokenInput = section.querySelector(`#${sectionId}-token`);
+      const token = tokenInput ? tokenInput.value.trim() : '';
+      const temperatureInput = section.querySelector(`#${sectionId}-temperature`);
+      const temperature = temperatureInput ? parseFloat(temperatureInput.value) : 0.7;
+      const maxTokensInput = section.querySelector(`#${sectionId}-maxTokens`);
+      const maxTokens = maxTokensInput ? parseInt(maxTokensInput.value) : 2000;
+      testConnection(type, sectionId, modelName, token, temperature, maxTokens, testBtn);
+    });
+  }
+
+  return section;
+}
+
+/**
+ * Toggle a section's open/closed state
+ * @param {string} sectionId - The section ID to toggle
+ */
+function toggleSection(sectionId) {
+  const section = document.querySelector(`[data-section-id="${sectionId}"]`);
+  if (!section) return;
+
+  const content = section.querySelector('.model-section-content');
+  const toggleIcon = section.querySelector('.section-toggle-icon');
+  const isOpen = sectionStates[sectionId]?.isOpen || false;
+
+  if (isOpen) {
+    // Collapse
+    content.style.maxHeight = content.scrollHeight + 'px';
+    setTimeout(() => {
+      content.style.maxHeight = '0';
+    }, 10);
+    setTimeout(() => {
+      content.style.display = 'none';
+    }, 300);
+    toggleIcon.textContent = '▶';
+    sectionStates[sectionId].isOpen = false;
+  } else {
+    // Expand
+    content.style.display = 'block';
+    content.style.maxHeight = '0';
+    setTimeout(() => {
+      content.style.maxHeight = content.scrollHeight + 'px';
+    }, 10);
+    setTimeout(() => {
+      content.style.maxHeight = 'none';
+    }, 300);
+    toggleIcon.textContent = '▼';
+    sectionStates[sectionId].isOpen = true;
+  }
+}
+
+/**
+ * Add a new planner section (only one allowed, always exists)
+ */
+function addPlannerSection(modelName = '', token = '', temperature = 0.7, maxTokens = 2000, isOpen = false) {
+  if (plannerSectionId) {
+    // Planner already exists, just update it if needed
+    const existingSection = document.querySelector(`[data-section-id="${plannerSectionId}"]`);
+    if (existingSection) {
+      // Update values if provided
+      if (modelName) {
+        const modelSelect = existingSection.querySelector(`#${plannerSectionId}-model`);
+        if (modelSelect) modelSelect.value = modelName;
+      }
+      if (token) {
+        const tokenInput = existingSection.querySelector(`#${plannerSectionId}-token`);
+        if (tokenInput) tokenInput.value = token;
+      }
+      if (temperature !== undefined) {
+        const tempInput = existingSection.querySelector(`#${plannerSectionId}-temperature`);
+        if (tempInput) tempInput.value = temperature;
+      }
+      if (maxTokens !== undefined) {
+        const maxTokensInput = existingSection.querySelector(`#${plannerSectionId}-maxTokens`);
+        if (maxTokensInput) maxTokensInput.value = maxTokens;
+      }
+      // Toggle if needed
+      if (isOpen && !sectionStates[plannerSectionId]?.isOpen) {
+        toggleSection(plannerSectionId);
+      } else if (!isOpen && sectionStates[plannerSectionId]?.isOpen) {
+        toggleSection(plannerSectionId);
+      }
+      return;
+    }
+  }
+
+  const sectionId = 'planner-' + Date.now();
+  plannerSectionId = sectionId;
+  const section = createModelSection('planner', sectionId, modelName, token, temperature, maxTokens, isOpen);
+  if (plannerSectionContainer) {
+    plannerSectionContainer.appendChild(section);
+  }
+}
+
+/**
+ * Add a new executor section (only one allowed, always exists)
+ */
+function addExecutorSection(modelName = '', token = '', temperature = 0.7, maxTokens = 2000, isOpen = false) {
+  if (executorSectionId) {
+    // Executor already exists, just update it if needed
+    const existingSection = document.querySelector(`[data-section-id="${executorSectionId}"]`);
+    if (existingSection) {
+      // Update values if provided
+      if (modelName) {
+        const modelSelect = existingSection.querySelector(`#${executorSectionId}-model`);
+        if (modelSelect) modelSelect.value = modelName;
+      }
+      if (token) {
+        const tokenInput = existingSection.querySelector(`#${executorSectionId}-token`);
+        if (tokenInput) tokenInput.value = token;
+      }
+      if (temperature !== undefined) {
+        const tempInput = existingSection.querySelector(`#${executorSectionId}-temperature`);
+        if (tempInput) tempInput.value = temperature;
+      }
+      if (maxTokens !== undefined) {
+        const maxTokensInput = existingSection.querySelector(`#${executorSectionId}-maxTokens`);
+        if (maxTokensInput) maxTokensInput.value = maxTokens;
+      }
+      // Toggle if needed
+      if (isOpen && !sectionStates[executorSectionId]?.isOpen) {
+        toggleSection(executorSectionId);
+      } else if (!isOpen && sectionStates[executorSectionId]?.isOpen) {
+        toggleSection(executorSectionId);
+      }
+      return;
+    }
+  }
+
+  const sectionId = 'executor-' + Date.now();
+  executorSectionId = sectionId;
+  const section = createModelSection('executor', sectionId, modelName, token, temperature, maxTokens, isOpen);
+  if (executorSectionContainer) {
+    executorSectionContainer.appendChild(section);
+  }
+}
+
 
 /**
  * Load MCP Servers
@@ -519,27 +835,106 @@ function addMCPServer() {
 async function loadSettings() {
   try {
     // First load available models
-    const models = await loadAvailableModels();
+    await loadAvailableModels();
 
     // Then load user settings
     const result = await chrome.storage.sync.get(SETTINGS_KEY);
     const settings = result[SETTINGS_KEY] || DEFAULT_SETTINGS;
 
-    const defaultModelName = models[0]?.name || '';
-
-    // Populate form fields
-    document.getElementById('hfToken').value = settings.hfToken || '';
-document.getElementById('maxTokens').value =
-      settings.maxTokens || DEFAULT_SETTINGS.maxTokens;
-    document.getElementById('temperature').value =
-      settings.temperature || DEFAULT_SETTINGS.temperature;
-
-    // Load planner/executor model selections
-    if (plannerSelect) {
-      plannerSelect.value = settings.plannerModel || defaultModelName;
+    // Clear existing sections
+    if (plannerSectionContainer) {
+      plannerSectionContainer.innerHTML = '';
     }
-    if (executorSelect) {
-      executorSelect.value = settings.executorModel || defaultModelName;
+    if (executorSectionContainer) {
+      executorSectionContainer.innerHTML = '';
+    }
+    plannerSectionId = null;
+    executorSectionId = null;
+    sectionStates = {};
+    manuallyEditedTokens.clear(); // Reset manual edit tracking
+
+    // Load planner model and token (backward compatibility: check old executorModel/executorToken)
+    const plannerModel = settings.plannerModel || '';
+    let plannerToken = settings.plannerToken || settings.hfToken || '';
+    
+    // If token is empty or matches model's default token, use default token (so it auto-updates)
+    if (plannerModel) {
+      const modelDefaultToken = getModelDefaultToken(plannerModel);
+      if (!plannerToken || plannerToken === modelDefaultToken) {
+        plannerToken = modelDefaultToken;
+        // Don't mark as manually edited if using default token
+      } else {
+        // Token was manually edited, mark it
+        // (will be marked after section is created)
+      }
+    }
+    
+    const plannerTemperature = settings.plannerTemperature !== undefined 
+      ? settings.plannerTemperature 
+      : (settings.temperature !== undefined ? settings.temperature : DEFAULT_SETTINGS.temperature);
+    const plannerMaxTokens = settings.plannerMaxTokens !== undefined 
+      ? settings.plannerMaxTokens 
+      : (settings.maxTokens !== undefined ? settings.maxTokens : DEFAULT_SETTINGS.maxTokens);
+    const plannerIsOpen = settings.plannerIsOpen !== undefined ? settings.plannerIsOpen : false;
+    
+    // Always create planner section (even if empty), collapsed by default
+    addPlannerSection(plannerModel, plannerToken, plannerTemperature, plannerMaxTokens, plannerIsOpen);
+    
+    // Mark planner token as manually edited if it doesn't match default
+    if (plannerSectionId && plannerModel) {
+      const savedToken = settings.plannerToken || settings.hfToken || '';
+      const modelDefaultToken = getModelDefaultToken(plannerModel);
+      if (savedToken && savedToken !== modelDefaultToken) {
+        manuallyEditedTokens.add(plannerSectionId);
+      }
+    }
+
+    // Load executor model (support both old single executor and new array format for backward compatibility)
+    let executorModel = '';
+    let executorToken = '';
+    let executorTemperature = DEFAULT_SETTINGS.temperature;
+    let executorMaxTokens = DEFAULT_SETTINGS.maxTokens;
+    let executorIsOpen = false;
+
+    if (settings.executorModels && Array.isArray(settings.executorModels) && settings.executorModels.length > 0) {
+      // New format: array of executors (use first one for backward compatibility)
+      const executor = settings.executorModels[0];
+      executorModel = executor.model || '';
+      executorToken = executor.token || '';
+      executorTemperature = executor.temperature !== undefined ? executor.temperature : DEFAULT_SETTINGS.temperature;
+      executorMaxTokens = executor.maxTokens !== undefined ? executor.maxTokens : DEFAULT_SETTINGS.maxTokens;
+      executorIsOpen = executor.isOpen !== undefined ? executor.isOpen : false;
+    } else if (settings.executorModel) {
+      // Old format: single executor (backward compatibility)
+      executorModel = settings.executorModel;
+      executorToken = settings.executorToken || settings.hfToken || '';
+      executorTemperature = settings.temperature !== undefined ? settings.temperature : DEFAULT_SETTINGS.temperature;
+      executorMaxTokens = settings.maxTokens !== undefined ? settings.maxTokens : DEFAULT_SETTINGS.maxTokens;
+      executorIsOpen = false;
+    }
+    
+    // If token is empty or matches model's default token, use default token (so it auto-updates)
+    if (executorModel) {
+      const modelDefaultToken = getModelDefaultToken(executorModel);
+      if (!executorToken || executorToken === modelDefaultToken) {
+        executorToken = modelDefaultToken;
+        // Don't mark as manually edited if using default token
+      } else {
+        // Token was manually edited, mark it
+        // (will be marked after section is created)
+      }
+    }
+
+    // Always create executor section (even if empty), collapsed by default
+    addExecutorSection(executorModel, executorToken, executorTemperature, executorMaxTokens, executorIsOpen);
+    
+    // Mark executor token as manually edited if it doesn't match default
+    if (executorSectionId && executorModel) {
+      const savedToken = settings.executorToken || settings.hfToken || '';
+      const modelDefaultToken = getModelDefaultToken(executorModel);
+      if (savedToken && savedToken !== modelDefaultToken) {
+        manuallyEditedTokens.add(executorSectionId);
+      }
     }
     
     // Load MCP Servers
@@ -596,25 +991,84 @@ async function saveSettings(event) {
       ? 'LOCAL'
       : (checkedProvider ? checkedProvider.value : '');
 
-    // Update only LLM-related settings
-    settings.hfToken = document.getElementById('hfToken').value.trim();
-    settings.plannerModel = plannerSelect ? plannerSelect.value : '';
-    settings.executorModel = executorSelect ? executorSelect.value : '';
-    settings.maxTokens = parseInt(document.getElementById('maxTokens').value);
-    settings.temperature = parseFloat(document.getElementById('temperature').value);
+    // Get planner model, token, temperature, maxTokens, and state from dynamic section
+    if (plannerSectionId) {
+      const plannerSection = document.querySelector(`[data-section-id="${plannerSectionId}"]`);
+      if (plannerSection) {
+        const modelSelect = plannerSection.querySelector(`#${plannerSectionId}-model`);
+        const tokenInput = plannerSection.querySelector(`#${plannerSectionId}-token`);
+        const temperatureInput = plannerSection.querySelector(`#${plannerSectionId}-temperature`);
+        const maxTokensInput = plannerSection.querySelector(`#${plannerSectionId}-maxTokens`);
+        settings.plannerModel = modelSelect ? modelSelect.value : '';
+        settings.plannerToken = tokenInput ? tokenInput.value.trim() : '';
+        settings.plannerTemperature = temperatureInput ? parseFloat(temperatureInput.value) : DEFAULT_SETTINGS.temperature;
+        settings.plannerMaxTokens = maxTokensInput ? parseInt(maxTokensInput.value) : DEFAULT_SETTINGS.maxTokens;
+        settings.plannerIsOpen = sectionStates[plannerSectionId]?.isOpen || false;
+      }
+    } else {
+      settings.plannerModel = '';
+      settings.plannerToken = '';
+      settings.plannerTemperature = DEFAULT_SETTINGS.temperature;
+      settings.plannerMaxTokens = DEFAULT_SETTINGS.maxTokens;
+      settings.plannerIsOpen = false;
+    }
+    
+    // Get executor model, token, temperature, maxTokens, and state from dynamic section
+    if (executorSectionId) {
+      const executorSection = document.querySelector(`[data-section-id="${executorSectionId}"]`);
+      if (executorSection) {
+        const modelSelect = executorSection.querySelector(`#${executorSectionId}-model`);
+        const tokenInput = executorSection.querySelector(`#${executorSectionId}-token`);
+        const temperatureInput = executorSection.querySelector(`#${executorSectionId}-temperature`);
+        const maxTokensInput = executorSection.querySelector(`#${executorSectionId}-maxTokens`);
+        settings.executorModel = modelSelect ? modelSelect.value : '';
+        settings.executorToken = tokenInput ? tokenInput.value.trim() : '';
+        settings.executorTemperature = temperatureInput ? parseFloat(temperatureInput.value) : DEFAULT_SETTINGS.temperature;
+        settings.executorMaxTokens = maxTokensInput ? parseInt(maxTokensInput.value) : DEFAULT_SETTINGS.maxTokens;
+        settings.executorIsOpen = sectionStates[executorSectionId]?.isOpen || false;
+      }
+    } else {
+      settings.executorModel = '';
+      settings.executorToken = '';
+      settings.executorTemperature = DEFAULT_SETTINGS.temperature;
+      settings.executorMaxTokens = DEFAULT_SETTINGS.maxTokens;
+      settings.executorIsOpen = false;
+    }
+    
+    // Keep executorModels array for backward compatibility (single executor)
+    settings.executorModels = settings.executorModel ? [{
+      model: settings.executorModel,
+      token: settings.executorToken,
+      temperature: settings.executorTemperature,
+      maxTokens: settings.executorMaxTokens,
+      isOpen: settings.executorIsOpen
+    }] : [];
+    
+    // Keep hfToken for backward compatibility (use plannerToken if available)
+    settings.hfToken = settings.plannerToken || '';
+    
+    // Keep global temperature and maxTokens for backward compatibility (use planner values)
+    settings.temperature = settings.plannerTemperature;
+    settings.maxTokens = settings.plannerMaxTokens;
     settings.providerType = providerType;
     settings.localName = localName;
     settings.localBaseUrl = localBaseUrl;
     settings.localModel = localModel;
 
     // Validate LLM tab fields
-    if (!settings.hfToken) {
-      showStatus('Please enter an API token', 'error');
+    if (!settings.plannerToken) {
+      showStatus('Please enter an API token for the Planner model', 'error');
       return;
     }
 
-    if (!settings.plannerModel || !settings.executorModel) {
-      showStatus('Please select both planner and executor models', 'error');
+    if (!settings.plannerModel) {
+      showStatus('Please select a planner model', 'error');
+      return;
+    }
+
+    // Executor is optional, but if selected, token is required
+    if (settings.executorModel && !settings.executorToken) {
+      showStatus('Please enter an API token for the Executor model', 'error');
       return;
     }
   } else if (activeTab === 'mcp') {
@@ -639,7 +1093,8 @@ async function saveSettings(event) {
 
     // Update the LLM client with new settings (only if LLM tab was saved)
     if (activeTab === 'llm' && llmClient.isInitialized && llmClient.currentLLM) {
-      llmClient.currentLLM.token = settings.hfToken;
+      // Use planner token as the default token
+      llmClient.currentLLM.token = settings.plannerToken || settings.hfToken;
     }
 
     console.log('[saveSettings] Showing success notification');
@@ -658,24 +1113,28 @@ async function saveSettings(event) {
 }
 
 /**
- * Test the LLM API connection
+ * Test the LLM API connection for a specific model
+ * @param {string} modelType - 'planner' or 'executor'
+ * @param {string} sectionId - The section ID for this model
+ * @param {string} modelName - The model name to test
+ * @param {string} token - The token to use for testing
+ * @param {number} temperature - The temperature to use for testing
+ * @param {number} maxTokens - The max tokens to use for testing
+ * @param {HTMLElement} testBtn - The test button element
  */
-async function testConnection() {
-  const token = document.getElementById('hfToken').value.trim();
-  const plannerModelName = plannerSelect ? plannerSelect.value : '';
-
+async function testConnection(modelType, sectionId, modelName, token, temperature, maxTokens, testBtn) {
   if (!token) {
-    showStatus('Please enter an API token first', 'error');
+    showStatus(`Please enter an API token for the ${modelType} model first`, 'error');
     return;
   }
 
-  if (!plannerModelName) {
-    showStatus('Please select a planner model first', 'error');
+  if (!modelName) {
+    showStatus(`Please select a ${modelType} model first`, 'error');
     return;
   }
 
-  showStatus('Testing connection...', 'success');
-  testBtn.disabled = true;
+  showStatus(`Testing ${modelType} model connection...`, 'success');
+  if (testBtn) testBtn.disabled = true;
 
   try {
     // Initialize LLM client if not already done
@@ -687,18 +1146,18 @@ async function testConnection() {
     const originalModel = llmClient.currentLLM;
     const originalToken = originalModel ? originalModel.token : null;
 
-    // Switch to the planner model
-    llmClient.selectLLM(plannerModelName);
+    // Switch to the model being tested
+    llmClient.selectLLM(modelName);
 
     // Update token temporarily for test
     llmClient.currentLLM.token = token;
 
-    // Test with a simple prompt
+    // Test with a simple prompt using the model's specific temperature and maxTokens
     const response = await llmClient.generateCompletion(
       "Say 'Hello, test successful!' if you can read this.",
       {
-        maxTokens: 50,
-        temperature: 0.7
+        maxTokens: Math.min(maxTokens, 50), // Use model's maxTokens but cap at 50 for test
+        temperature: temperature
       }
     );
 
@@ -710,11 +1169,11 @@ async function testConnection() {
       }
     }
 
-    showStatus('Connection successful! Model is responding: ' + response.substring(0, 100), 'success');
+    showStatus(`${modelType.charAt(0).toUpperCase() + modelType.slice(1)} model connection successful! Response: ${response.substring(0, 100)}`, 'success');
   } catch (error) {
-    showStatus('Connection failed: ' + error.message, 'error');
+    showStatus(`${modelType.charAt(0).toUpperCase() + modelType.slice(1)} model connection failed: ${error.message}`, 'error');
   } finally {
-    testBtn.disabled = false;
+    if (testBtn) testBtn.disabled = false;
   }
 }
 
@@ -770,10 +1229,16 @@ function resetNewModelForm() {
   if (newModelPromptInput) newModelPromptInput.value = '';
 }
 
-// Append a single model option to both planner and executor dropdowns
+// Append a single model option to all existing model select dropdowns
 function appendModelToDropdowns(model) {
   if (!model || !model.name) return;
-  [plannerSelect, executorSelect].forEach((select) => {
+  
+  // Add to available models list
+  availableModels.push(model);
+  
+  // Update all existing model select dropdowns
+  const allSelects = document.querySelectorAll('.model-select');
+  allSelects.forEach((select) => {
     if (!select) return;
     const option = document.createElement('option');
     option.value = model.name;
@@ -821,12 +1286,11 @@ async function handleAddModelSave() {
       llmClient.config.llms.push(newModel);
     }
 
-    // Immediately append to planner and executor dropdowns
+    // Immediately append to all existing model select dropdowns
     appendModelToDropdowns(newModel);
 
-    // Optionally auto-select the new model
-    if (plannerSelect) plannerSelect.value = name;
-    if (executorSelect) executorSelect.value = name;
+    // Optionally auto-select the new model in the first available section
+    // (User can manually select it in their sections)
 
     // Hide and reset the form
     if (newModelForm) {
@@ -885,7 +1349,7 @@ tabButtons.forEach(btn => {
 
 // Event listeners
 settingsForm.addEventListener('submit', saveSettings);
-testBtn.addEventListener('click', testConnection);
+
 addMcpBtn.addEventListener('click', addMCPServer);
 cancelMcpBtn.addEventListener('click', cancelEdit);
 
