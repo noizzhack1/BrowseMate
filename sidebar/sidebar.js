@@ -1043,6 +1043,217 @@ function updateStreamingMessage(messageBody, newContent, append = true) {
   }
 }
 
+// Agent activity container reference (for grouping all thoughts and actions)
+let agentActivityContainer = null;
+let agentActivityBody = null;
+let agentActivityStepCount = 0;
+
+/**
+ * Get or create the agent activity container
+ * This is a single collapsible container that groups all thinking and actions
+ * @returns {HTMLElement} The agent activity container
+ */
+function getOrCreateAgentActivityContainer() {
+  if (agentActivityContainer && chatMessagesEl.contains(agentActivityContainer)) {
+    return agentActivityContainer;
+  }
+
+  // Create wrapper
+  const wrapper = document.createElement("div");
+  wrapper.className = "message-wrapper message-wrapper--agent-activity flex justify-start";
+
+  const container = document.createElement("div");
+  container.className = "message message--agent-activity";
+
+  // Create collapsible header
+  const header = document.createElement("button");
+  header.className = "agent-activity-header";
+  header.setAttribute("aria-expanded", "false");
+  header.innerHTML = `
+    <span class="agent-activity-icon">🤖</span>
+    <span class="agent-activity-label">Agent Activity</span>
+    <span class="agent-activity-count">(0 steps)</span>
+    <span class="agent-activity-arrow">▶</span>
+  `;
+
+  // Create collapsible body
+  const body = document.createElement("div");
+  body.className = "agent-activity-body collapsed";
+
+  // Add click handler for toggle
+  header.addEventListener("click", () => {
+    const isExpanded = header.getAttribute("aria-expanded") === "true";
+    header.setAttribute("aria-expanded", String(!isExpanded));
+
+    const arrow = header.querySelector(".agent-activity-arrow");
+    if (isExpanded) {
+      body.classList.add("collapsed");
+      body.classList.remove("expanded");
+      arrow.classList.remove("expanded");
+    } else {
+      body.classList.remove("collapsed");
+      body.classList.add("expanded");
+      arrow.classList.add("expanded");
+    }
+  });
+
+  container.appendChild(header);
+  container.appendChild(body);
+  wrapper.appendChild(container);
+
+  chatMessagesEl.appendChild(wrapper);
+
+  agentActivityContainer = wrapper;
+  agentActivityBody = body;
+  agentActivityStepCount = 0;
+
+  return wrapper;
+}
+
+/**
+ * Add a thinking entry to the agent activity container
+ * @param {string} thought - The thought content
+ */
+function addThinkingToActivity(thought) {
+  if (!chatMessagesEl) return;
+
+  getOrCreateAgentActivityContainer();
+
+  // Create thinking entry
+  const entry = document.createElement("div");
+  entry.className = "activity-entry activity-entry--thinking";
+  entry.innerHTML = `
+    <div class="activity-entry-header">
+      <span class="activity-entry-icon">💭</span>
+      <span class="activity-entry-label">Thinking</span>
+    </div>
+    <div class="activity-entry-content">${escapeHtml(thought)}</div>
+  `;
+
+  agentActivityBody.appendChild(entry);
+  agentActivityStepCount++;
+  updateActivityCount();
+
+  // Auto-scroll
+  chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+}
+
+/**
+ * Add an action entry to the agent activity container
+ * @param {string} action - The action description
+ * @param {string} status - Status: 'in_progress', 'success', 'failed'
+ */
+function addActionToActivity(action, status = 'in_progress') {
+  if (!chatMessagesEl) return;
+
+  getOrCreateAgentActivityContainer();
+
+  // Status icons and classes
+  let icon, statusClass;
+  switch (status) {
+    case 'success':
+      icon = '✓';
+      statusClass = 'activity-entry--success';
+      break;
+    case 'failed':
+      icon = '✗';
+      statusClass = 'activity-entry--failed';
+      break;
+    default:
+      icon = '⚡';
+      statusClass = 'activity-entry--in-progress';
+  }
+
+  // Create action entry
+  const entry = document.createElement("div");
+  entry.className = `activity-entry activity-entry--action ${statusClass}`;
+  entry.innerHTML = `
+    <div class="activity-entry-header">
+      <span class="activity-entry-icon">${icon}</span>
+      <span class="activity-entry-label">Action</span>
+      ${status === 'in_progress' ? '<span class="activity-spinner">⟳</span>' : ''}
+    </div>
+    <div class="activity-entry-content">${escapeHtml(action)}</div>
+  `;
+
+  agentActivityBody.appendChild(entry);
+  agentActivityStepCount++;
+  updateActivityCount();
+
+  // Auto-scroll
+  chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+
+  return entry;
+}
+
+/**
+ * Update the last action entry with new status
+ * @param {string} status - 'success' or 'failed'
+ * @param {string} message - Optional updated message
+ */
+function updateLastActionInActivity(status, message = null) {
+  if (!agentActivityBody) return;
+
+  const actionEntries = agentActivityBody.querySelectorAll('.activity-entry--action');
+  if (actionEntries.length === 0) return;
+
+  const lastEntry = actionEntries[actionEntries.length - 1];
+
+  // Remove spinner
+  const spinner = lastEntry.querySelector('.activity-spinner');
+  if (spinner) spinner.remove();
+
+  // Update status class
+  lastEntry.classList.remove('activity-entry--in-progress');
+  if (status === 'success') {
+    lastEntry.classList.add('activity-entry--success');
+    const icon = lastEntry.querySelector('.activity-entry-icon');
+    if (icon) icon.textContent = '✓';
+  } else if (status === 'failed') {
+    lastEntry.classList.add('activity-entry--failed');
+    const icon = lastEntry.querySelector('.activity-entry-icon');
+    if (icon) icon.textContent = '✗';
+  }
+
+  // Update message if provided
+  if (message) {
+    const content = lastEntry.querySelector('.activity-entry-content');
+    if (content) content.textContent = message;
+  }
+}
+
+/**
+ * Update the step count in the header
+ */
+function updateActivityCount() {
+  if (!agentActivityContainer) return;
+
+  const countEl = agentActivityContainer.querySelector('.agent-activity-count');
+  if (countEl) {
+    countEl.textContent = `(${agentActivityStepCount} step${agentActivityStepCount !== 1 ? 's' : ''})`;
+  }
+}
+
+/**
+ * Reset the agent activity container for a new request
+ */
+function resetAgentActivity() {
+  agentActivityContainer = null;
+  agentActivityBody = null;
+  agentActivityStepCount = 0;
+}
+
+/**
+ * Escape HTML to prevent XSS
+ * @param {string} text
+ * @returns {string}
+ */
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
 /**
  * Call Task A orchestrator to process user request
  * This replaces the direct LLM call with the full Task A + Task B flow
@@ -1052,9 +1263,10 @@ function updateStreamingMessage(messageBody, newContent, append = true) {
  * @param {AbortSignal} abortSignal - Signal to cancel the request
  * @param {Function} onInteraction - Optional callback for user interactions (question) => Promise<answer>
  * @param {Function} onStreamChunk - Optional callback for streaming answer chunks
+ * @param {Function} onThinking - Optional callback for agent thinking updates
  * @returns {Promise<string>}
  */
-async function callLLMAPI(userText, includeContext = false, onProgress = null, abortSignal = null, onInteraction = null, onStreamChunk = null) {
+async function callLLMAPI(userText, includeContext = false, onProgress = null, abortSignal = null, onInteraction = null, onStreamChunk = null, onThinking = null) {
   console.log('[callLLMAPI] Starting LLM API call');
   console.log('[callLLMAPI] User text:', userText);
   console.log('[callLLMAPI] Include context:', includeContext);
@@ -1091,7 +1303,7 @@ async function callLLMAPI(userText, includeContext = false, onProgress = null, a
     // Use Task A orchestrator to process the request
     // Task A will determine if it's a question or action and route accordingly
     console.log('[callLLMAPI] Calling processRequest...');
-    const result = await processRequest(context, userText, onProgress, abortSignal, conversationHistory, onInteraction, onStreamChunk);
+    const result = await processRequest(context, userText, onProgress, abortSignal, conversationHistory, onInteraction, onStreamChunk, onThinking);
     console.log('[callLLMAPI] ProcessRequest completed');
     
     // Check if request was aborted
@@ -1177,6 +1389,9 @@ async function handleChatSubmit(event) {
     return;
   }
 
+  // Reset agent activity container for new request
+  resetAgentActivity();
+
   // Show user message
   appendMessage("user", value);
 
@@ -1204,7 +1419,6 @@ async function handleChatSubmit(event) {
 
   let reply;
   let progressMessageEl = null;
-  let progressContainer = null;
   let streamingMessageEl = null; // For streaming question answers
   let isPageFrozen = false; // Track if we've frozen the page
 
@@ -1245,7 +1459,7 @@ async function handleChatSubmit(event) {
     };
 
     // Create a callback for progress updates
-    const onProgress = (taskList, currentStep, totalSteps, status) => {
+    const onProgress = (taskList, _currentStep, _totalSteps, _status) => {
       // Check if request was aborted
       if (abortSignal.aborted) {
         return;
@@ -1265,36 +1479,24 @@ async function handleChatSubmit(event) {
         }
       }
 
-      // Create progress message if it doesn't exist
-      if (!progressMessageEl) {
-        // Create wrapper for message and copy icon
-        const progressWrapper = document.createElement("div");
-        progressWrapper.className = "message-wrapper";
-        
-        progressContainer = document.createElement("div");
-        progressContainer.className = "message message--assistant bg-white text-slate-800 border border-slate-200";
-        progressMessageEl = document.createElement("div");
-        progressMessageEl.className = "message__body text-sm";
-        progressContainer.appendChild(progressMessageEl);
-        
-        // Add message to wrapper
-        progressWrapper.appendChild(progressContainer);
-        
-        // Add icons outside message border (at the end of message)
-        // Progress messages are assistant messages, so no edit icon
-        const iconsWrapper = createMessageIcons(progressContainer, progressMessageEl, "assistant", null);
-        progressWrapper.appendChild(iconsWrapper);
-        
-        chatMessagesEl.appendChild(progressWrapper);
-        chatMessagesEl.appendChild(progressContainer);
+      // Check if this is an action progress update (starts with icon)
+      if (typeof taskList === 'string' && (taskList.startsWith('⚡') || taskList.startsWith('✓') || taskList.startsWith('✗'))) {
+        const actionText = taskList.substring(2).trim(); // Remove icon and space
+
+        if (taskList.startsWith('⚡')) {
+          // New action starting - add to activity container
+          addActionToActivity(actionText, 'in_progress');
+        } else if (taskList.startsWith('✓')) {
+          // Action succeeded - update last action in activity
+          updateLastActionInActivity('success', actionText);
+        } else if (taskList.startsWith('✗')) {
+          // Action failed - update last action in activity
+          updateLastActionInActivity('failed', actionText);
+        }
+        return;
       }
 
-      // Update the message with the current task list
-      const header = `Executing actions (${currentStep}/${totalSteps})...\n\n`;
-      progressMessageEl.innerHTML = textToHTML(header + taskList);
-
-      // Auto-scroll to bottom
-      chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+      // For scratchpad display updates, we ignore them since we track individually
     };
 
     // Create a callback for user interactions (asking questions during execution)
@@ -1359,7 +1561,32 @@ async function handleChatSubmit(event) {
       });
     };
 
-    reply = await callLLMAPI(value, includeContext, onProgress, abortSignal, onInteraction, onStreamChunk);
+    // Create a callback for agent thinking updates (ReAct agent)
+    const onThinking = (thought) => {
+      // Check if request was aborted
+      if (abortSignal.aborted) {
+        return;
+      }
+
+      // Freeze page when agent starts thinking
+      if (!isPageFrozen) {
+        setPageFrozen(true);
+        isPageFrozen = true;
+      }
+
+      // Remove "Thinking..." message if still there
+      if (chatMessagesEl && chatMessagesEl.lastChild) {
+        const lastMsg = chatMessagesEl.lastChild.querySelector('.message__body');
+        if (lastMsg && lastMsg.textContent === "Thinking...") {
+          chatMessagesEl.removeChild(chatMessagesEl.lastChild);
+        }
+      }
+
+      // Add thinking to the agent activity container
+      addThinkingToActivity(thought);
+    };
+
+    reply = await callLLMAPI(value, includeContext, onProgress, abortSignal, onInteraction, onStreamChunk, onThinking);
   } catch (error) {
     // Handle cancellation gracefully
     if (abortSignal.aborted || error.message === 'Request cancelled by user') {
