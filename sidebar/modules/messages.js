@@ -200,7 +200,7 @@ export function createStreamingMessage(role, chatMessagesEl, createMessageIconsF
  */
 export function updateStreamingMessage(messageBody, newContent, append = true, chatMessagesEl = null) {
   if (!messageBody) return;
-
+  messageBody.classList.add('text-sm');
   if (append) {
     const currentText = messageBody.textContent || '';
     const fullText = currentText + newContent;
