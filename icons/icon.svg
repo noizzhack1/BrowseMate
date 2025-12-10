@@ -1,34 +1,91 @@
-<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M79.309 22.1314C129.709 19.7314 136.642 50.7981 133.809 66.6314C134.975 81.4314 126.962 100.131 122.809 107.631C109.209 112.031 109.642 122.333 112.809 132C110.409 152 87.9757 174.798 75.809 178.631C70.3091 150.631 60.0282 138.163 51.809 127.5C33.309 103.5 41.809 63.6314 70.3091 52.1314C75.4095 50.0734 57.6424 52.1314 54.309 52.1314C85.809 23.6314 107.309 41.6314 107.309 38.6314C107.309 36.2314 88.6424 26.6314 79.309 22.1314Z" fill="#02BD69"/>
-<g filter="url(#filter0_d_36_228)">
-<circle cx="111.309" cy="95.5" r="36.5" fill="#FF3E3E"/>
-<path d="M147.809 95.5C147.809 100.972 146.579 106.373 144.21 111.305C141.84 116.237 138.392 120.574 134.121 123.993C129.849 127.413 124.864 129.829 119.533 131.061C114.202 132.294 108.662 132.313 103.323 131.116C97.9838 129.918 92.9821 127.536 88.688 124.145C84.3939 120.754 80.9171 116.441 78.5149 111.525C76.1126 106.608 74.8464 101.215 74.8099 95.7436C74.7734 90.272 75.9675 84.8623 78.3039 79.9145L111.309 95.5H147.809Z" fill="#02BD69"/>
-<path d="M147.391 89.9913C148.177 95.1404 147.852 100.398 146.438 105.411C145.023 110.424 142.552 115.076 139.191 119.055C135.829 123.034 131.655 126.248 126.949 128.479C122.243 130.711 117.113 131.91 111.905 131.995L111.309 95.5L147.391 89.9913Z" fill="#FCCF08"/>
-</g>
-<g filter="url(#filter1_d_36_228)">
-<path d="M148 132.396C175.2 80.7965 139.5 74.3965 113 79.3965L123.5 108.396C141.1 110.396 147.167 125.23 148 132.396Z" fill="#FCCF08"/>
-</g>
-<circle cx="108.309" cy="94.5" r="16" fill="#477BF6" stroke="white" stroke-width="5"/>
-<defs>
-<filter id="filter0_d_36_228" x="70.8091" y="59" width="81" height="81" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-<feFlood flood-opacity="0" result="BackgroundImageFix"/>
-<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
-<feOffset dy="4"/>
-<feGaussianBlur stdDeviation="2"/>
-<feComposite in2="hardAlpha" operator="out"/>
-<feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.12 0"/>
-<feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_36_228"/>
-<feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_36_228" result="shape"/>
-</filter>
-<filter id="filter1_d_36_228" x="109" y="78" width="52.7339" height="62.3965" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-<feFlood flood-opacity="0" result="BackgroundImageFix"/>
-<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
-<feOffset dy="4"/>
-<feGaussianBlur stdDeviation="2"/>
-<feComposite in2="hardAlpha" operator="out"/>
-<feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.12 0"/>
-<feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_36_228"/>
-<feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_36_228" result="shape"/>
-</filter>
-</defs>
-</svg>
+The error is, Microphone permission denied. Please enable microphone access in your browser settings, indicates that the browser has denied access to the microphone, either because the user explicitly rejected the permission or the browser settings need to be adjusted.
+
+Issue Breakdown:
+
+NotAllowedError: Permission dismissed — This suggests that the user has either denied the microphone permission in the browser or the permission prompt was dismissed.
+
+Microphone permission status: prompt — The browser is trying to request microphone access, but it appears that the user has either dismissed or rejected the prompt.
+
+Failed to start recording due to permission denial — Since the permission has been denied, the speech-to-text service cannot start recording.
+
+Steps to Resolve:
+
+Ensure Correct Permission Request Flow:
+
+Make sure you're properly requesting microphone access through navigator.mediaDevices.getUserMedia({ audio: true }) and handling permission status correctly. This should only prompt the user once, when they click the microphone button.
+
+If the user denies access, show a non-intrusive message indicating they need to enable microphone access in the browser settings (rather than trying to request permission again).
+
+Display Instructions to the User:
+
+When the user denies access or dismisses the prompt, provide a user-friendly message (instead of just an alert) like:
+
+"Microphone access denied. Please enable microphone access in your browser settings."
+
+Provide a link or clear instruction on how to enable the microphone in the browser settings. This can be a simple text or an icon that the user can click to guide them to the correct settings page.
+
+Check if Permission Was Previously Denied:
+
+Before attempting to access the microphone, check if the permission status is already denied. You can use the navigator.permissions.query({ name: 'microphone' }) API to check the status and handle it accordingly.
+
+If the permission is denied, don’t try to request it again, but instead guide the user to change the settings manually.
+
+Handle Permission Denial Gracefully:
+
+Instead of throwing an error when permission is denied, show a small, non-intrusive UI element near the microphone button or input field.
+
+You could use the following pattern:
+
+"Microphone access denied. Please go to your browser settings and allow access."
+
+Include a link or instructions for users on how to enable the microphone in the browser settings.
+
+Example Update for Handling Permissions:
+Here's an example of how you can adjust your code for a better experience:
+
+// Function to check microphone permission status and handle accordingly
+async function checkMicrophonePermission() {
+    const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
+
+    if (permissionStatus.state === 'denied') {
+        showPermissionDeniedMessage();
+    } else {
+        requestMicrophonePermission();
+    }
+}
+
+// Function to show a custom message when permission is denied
+function showPermissionDeniedMessage() {
+    // Display a message near the mic button
+    const micButton = document.querySelector('#micButton');
+    micButton.innerText = "Microphone access denied. Please enable microphone access in your browser settings.";
+    micButton.style.color = 'red';
+    micButton.addEventListener('click', () => {
+        openBrowserSettings();
+    });
+}
+
+// Function to guide the user to open browser settings
+function openBrowserSettings() {
+    // Provide instructions to open settings or guide them to the appropriate settings page
+    window.open("chrome://settings/content/microphone", "_blank");
+}
+
+// Function to request microphone permission
+async function requestMicrophonePermission() {
+    try {
+        await navigator.mediaDevices.getUserMedia({ audio: true });
+        startRecording(); // Start the recording if permission is granted
+    } catch (error) {
+        console.error("Microphone permission error:", error);
+        showPermissionDeniedMessage();
+    }
+}
+
+Conclusion:
+
+Don't Re-request Permissions: If permission is denied or dismissed, avoid re-triggering the permission request immediately. Show the user clear instructions to enable it manually.
+
+User Experience: Use friendly instructions or a link to guide users on enabling microphone access in the browser settings rather than relying on the default browser alert.
+
+Check Permission Status: Use the navigator.permissions.query() API to check for permission status before attempting to access the microphone again.

@@ -20,6 +20,8 @@ import {
   handleMemoryStatsClick as handleMemoryStatsClickBase,
   startNewChat as startNewChatBase
 } from './modules/memory-stats.js';
+// Import speech-to-text service
+import { SpeechToTextService } from './modules/speech-to-text.js';
 
 // =========================
 // DOM references
@@ -47,6 +49,8 @@ const chatStopBtn = document.getElementById("chatStop");
 const chatSendBtn = document.getElementById("chatSend");
 /** @type {HTMLButtonElement | null} */
 const memoryStatsBtn = document.getElementById("memoryStatsBtn");
+/** @type {HTMLButtonElement | null} */
+const chatMicBtn = document.getElementById("chatMic");
 
 // =========================
 // Request cancellation state
@@ -202,9 +206,9 @@ async function removeMessageAndMemory(messageWrapper, role, content) {
 async function resendMessageAndReplace(editedText, userMessageWrapper, oldAssistantWrappers = [], oldUserContent = '', skipMemoryCleanup = false) {
   if (!chatMessagesEl || isRequestInProgress) {
     console.warn('[resendMessageAndReplace] Cannot resend: chat not ready or request in progress');
-    return;
-  }
-  
+      return;
+    }
+
   // Remove ALL old assistant messages from DOM (if any remain)
   // Note: These may have already been removed by the caller, but we'll try anyway
   let removedFromDOM = 0;
@@ -724,9 +728,9 @@ function createMessageIcons(container, body, role, originalText = null) {
       console.log(`[saveAndResend] Removed ${allMessagesAfter.length} message(s) from DOM`);
       
       // Update the message content in place
-      body.textContent = trimmedText;
-      // Update saved original text for future edits
-      savedOriginalText = trimmedText;
+        body.textContent = trimmedText;
+        // Update saved original text for future edits
+        savedOriginalText = trimmedText;
       
       // Exit edit mode
       exitEditMode();
@@ -885,7 +889,7 @@ function createMessageIcons(container, body, role, originalText = null) {
  */
 function appendMessage(role, text, saveToMemory = true) {
   if (!chatMessagesEl) return null;
-
+  
   // Create wrapper for message and copy icon (copy icon outside message border)
   const messageWrapper = document.createElement("div");
   // Add flex and justify classes based on role (user: justify-end, assistant: justify-start)
@@ -905,18 +909,18 @@ function appendMessage(role, text, saveToMemory = true) {
   if (role === 'assistant') {
     body.innerHTML = markdownToHTML(text);
   } else {
-    body.textContent = text;
+  body.textContent = text;
   }
 
   container.appendChild(body);
-
+  
   // Add message to wrapper
   messageWrapper.appendChild(container);
-
+  
   // Add icons outside message border (at the end of message)
   const iconsWrapper = createMessageIcons(container, body, role, text);
   messageWrapper.appendChild(iconsWrapper);
-
+  
   chatMessagesEl.appendChild(messageWrapper);
 
   // Auto-scroll to bottom
@@ -928,7 +932,7 @@ function appendMessage(role, text, saveToMemory = true) {
       console.error('[appendMessage] Failed to save message to memory:', error);
     });
   }
-
+  
   return body;
 }
 
@@ -979,13 +983,13 @@ async function loadConversationHistory() {
  */
 function createStreamingMessage(role) {
   if (!chatMessagesEl) return null;
-
+  
   // Create wrapper for message and copy icon (copy icon outside message border)
   const messageWrapper = document.createElement("div");
   // Add flex and justify classes based on role (user: justify-end, assistant: justify-start)
   const wrapperFlexClass = role === 'user' ? 'flex justify-end' : 'flex justify-start';
   messageWrapper.className = `message-wrapper message-wrapper--${role} ${wrapperFlexClass}`;
-
+  
   const container = document.createElement("div");
   // Add Tailwind classes based on message role
   const roleClasses = role === 'user'
@@ -998,20 +1002,20 @@ function createStreamingMessage(role) {
   body.textContent = "";
 
   container.appendChild(body);
-
+  
   // Add message to wrapper
   messageWrapper.appendChild(container);
-
+  
   // Add icons outside message border (at the end of message)
   // Note: For streaming messages, we don't have original text, so edit won't be available
   const iconsWrapper = createMessageIcons(container, body, role, null);
   messageWrapper.appendChild(iconsWrapper);
-
+  
   chatMessagesEl.appendChild(messageWrapper);
 
   // Auto-scroll to bottom
   chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
-
+  
   return { container, body };
 }
 
@@ -1181,7 +1185,7 @@ function addActionToActivity(action, status = 'in_progress') {
   updateActivityCount();
 
   // Auto-scroll
-  chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+    chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
 
   return entry;
 }
@@ -1661,6 +1665,342 @@ async function handleChatSubmit(event) {
   }
 }
 
+// =========================
+// Speech-to-text functionality
+// =========================
+
+// Create STT service instance
+const sttService = new SpeechToTextService();
+
+// Track recording state
+let isRecording = false;
+let currentTranscript = ''; // Store current transcript for finalization
+let micPermissionErrorEl = null; // Persistent error message element near mic button
+
+/**
+ * Show error message in UI (non-intrusive toast notification)
+ * @param {string} message - Error message to display
+ */
+function showSTTError(message) {
+  // Remove any existing error messages first
+  const existingErrors = document.querySelectorAll('.stt-error-message');
+  existingErrors.forEach(el => {
+    if (el.parentNode) {
+      el.parentNode.removeChild(el);
+    }
+  });
+
+  // Create a temporary error message element (non-intrusive toast)
+  const errorEl = document.createElement('div');
+  errorEl.className = 'stt-error-message';
+  errorEl.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #dc2626; color: white; padding: 12px 16px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); z-index: 10000; font-size: 14px; max-width: 300px; animation: slideIn 0.3s ease-out;';
+  errorEl.textContent = message;
+  
+  // Add slide-in animation
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes slideIn {
+      from {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+  `;
+  if (!document.head.querySelector('style[data-stt-error]')) {
+    style.setAttribute('data-stt-error', 'true');
+    document.head.appendChild(style);
+  }
+  
+  document.body.appendChild(errorEl);
+  
+  // Remove after 5 seconds with fade-out
+  setTimeout(() => {
+    if (errorEl.parentNode) {
+      errorEl.style.transition = 'opacity 0.3s ease-out, transform 0.3s ease-out';
+      errorEl.style.opacity = '0';
+      errorEl.style.transform = 'translateX(100%)';
+      setTimeout(() => {
+        if (errorEl.parentNode) {
+          errorEl.parentNode.removeChild(errorEl);
+        }
+      }, 300);
+    }
+  }, 5000);
+}
+
+/**
+ * Update microphone button visual state
+ * @param {boolean} recording - Whether currently recording
+ */
+function updateMicButtonState(recording) {
+  if (!chatMicBtn) return;
+  
+  if (recording) {
+    // Recording state - add pulsing animation class
+    chatMicBtn.classList.add('recording');
+    chatMicBtn.setAttribute('aria-label', 'Stop voice input');
+    chatMicBtn.title = 'Stop voice input';
+  } else {
+    // Idle state - remove recording class
+    chatMicBtn.classList.remove('recording');
+    chatMicBtn.setAttribute('aria-label', 'Start voice input');
+    chatMicBtn.title = 'Start voice input';
+  }
+}
+
+/**
+ * Open Chrome microphone settings page
+ * Attempts to open Chrome's microphone settings using chrome.tabs API
+ * Falls back to showing instructions if direct opening is not possible
+ */
+function openMicrophoneSettings() {
+  // Try to open Chrome's microphone settings page using chrome.tabs API
+  // Chrome extensions with "tabs" permission can open chrome:// URLs
+  if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.create) {
+    // Use chrome.tabs.create to open settings in a new tab
+    chrome.tabs.create({
+      url: 'chrome://settings/content/microphone'
+    }, (tab) => {
+      // Check if tab creation was successful
+      if (chrome.runtime.lastError) {
+        console.warn('[openMicrophoneSettings] Could not open Chrome settings directly:', chrome.runtime.lastError.message);
+        // Show instructions as fallback
+        showSTTError('Please go to Chrome Settings > Privacy and security > Site settings > Microphone to enable access.');
+      } else {
+        console.log('[openMicrophoneSettings] Opened Chrome microphone settings');
+      }
+    });
+  } else {
+    // Chrome API not available - show instructions
+    console.warn('[openMicrophoneSettings] Chrome tabs API not available');
+    showSTTError('Please go to Chrome Settings > Privacy and security > Site settings > Microphone to enable access.');
+  }
+}
+
+/**
+ * Show persistent error message near microphone button with link to settings
+ * @param {string} message - Error message to display
+ */
+function showMicPermissionError(message) {
+  navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+    console.log("microphone allowed");
+  }).catch(error => {
+    console.error('[SpeechToTextService] Failed to get microphone permission:', error);
+    this.permissionState = null;
+    return 'prompt';
+  });
+  // Remove existing error message if any
+  hideMicPermissionError();
+  
+  if (!chatMicBtn) return;
+  
+  // Create error message container
+  micPermissionErrorEl = document.createElement('div');
+  micPermissionErrorEl.className = 'mic-permission-error';
+  micPermissionErrorEl.style.cssText = 'position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 8px; background: #dc2626; color: white; padding: 10px 14px; border-radius: 6px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 1000; pointer-events: auto; max-width: 250px; text-align: center;';
+  
+  // Create message text
+  const messageText = document.createElement('div');
+  messageText.style.cssText = 'margin-bottom: 8px; line-height: 1.4;';
+  messageText.textContent = message || 'Please allow microphone access in your browser settings.';
+  
+  // Create clickable link/button to open settings
+  const settingsLink = document.createElement('button');
+  settingsLink.textContent = 'Click here to open settings';
+  settingsLink.style.cssText = 'background: rgba(255, 255, 255, 0.2); border: 1px solid rgba(255, 255, 255, 0.3); color: white; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 500; transition: background 0.2s; width: 100%;';
+  settingsLink.addEventListener('mouseenter', () => {
+    settingsLink.style.background = 'rgba(255, 255, 255, 0.3)';
+  });
+  settingsLink.addEventListener('mouseleave', () => {
+    settingsLink.style.background = 'rgba(255, 255, 255, 0.2)';
+  });
+  settingsLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openMicrophoneSettings();
+  });
+  
+  // Assemble error message
+  micPermissionErrorEl.appendChild(messageText);
+  micPermissionErrorEl.appendChild(settingsLink);
+  
+  // Position relative to mic button
+  const micBtnParent = chatMicBtn.parentElement;
+  if (micBtnParent) {
+    // Ensure parent has relative positioning
+    const parentPosition = window.getComputedStyle(micBtnParent).position;
+    if (parentPosition === 'static') {
+      micBtnParent.style.position = 'relative';
+    }
+    
+    micBtnParent.appendChild(micPermissionErrorEl);
+  }
+}
+
+/**
+ * Hide persistent error message near microphone button
+ */
+function hideMicPermissionError() {
+  if (micPermissionErrorEl && micPermissionErrorEl.parentNode) {
+    micPermissionErrorEl.parentNode.removeChild(micPermissionErrorEl);
+    micPermissionErrorEl = null;
+  }
+}
+
+/**
+ * Handle microphone button click - start/stop recording
+ */
+async function handleMicClick() {
+  // Don't allow recording if a request is in progress
+  if (isRequestInProgress) {
+    showSTTError('Please wait for the current request to complete');
+    return;
+  }
+
+  // Check if STT is supported
+  if (!sttService.isAvailable()) {
+    showSTTError('Speech recognition is not supported in this browser');
+    return;
+  }
+
+  if (isRecording) {
+    // Stop recording
+    sttService.stopRecording();
+    isRecording = false;
+    updateMicButtonState(false);
+    
+    // Re-enable send button
+    if (chatSendBtn) {
+      chatSendBtn.disabled = false;
+    }
+    
+    // If we have a final transcript, send it
+    if (currentTranscript.trim() && chatInputEl) {
+      chatInputEl.value = currentTranscript.trim();
+      autoResizeTextArea(chatInputEl);
+      
+      // Auto-send the message (same as pressing Send button)
+      if (chatFormEl) {
+        chatFormEl.requestSubmit();
+      }
+    }
+    
+    // Reset transcript
+    currentTranscript = '';
+  } else {
+    // Start recording - check permission first
+    try {
+      // Check microphone permission status before attempting to record
+      // This prevents unnecessary permission prompts if already denied
+      const permissionStatus = await sttService.checkMicrophonePermission();
+      
+      // If permission is denied, show persistent message and don't try to request again
+      if (permissionStatus === 'denied' || sttService.getPermissionState() === 'denied') {
+        // showMicPermissionError('Please allow microphone access in your browser settings.');
+        // Don't try to request permission again - user needs to enable it manually
+        return;
+      }
+      
+      // Clear any existing error message (permission might have been granted)
+      hideMicPermissionError();
+      
+      // Clear input field
+      if (chatInputEl) {
+        chatInputEl.value = '';
+        autoResizeTextArea(chatInputEl);
+      }
+      
+      // Disable send button while recording
+      if (chatSendBtn) {
+        chatSendBtn.disabled = true;
+      }
+      
+      // Reset transcript
+      currentTranscript = '';
+      
+      // Start recording with callbacks
+      await sttService.startRecording({
+        // Live transcript updates - update input field as user speaks
+        onTranscriptUpdate: (interimText) => {
+          if (chatInputEl) {
+            // Update input with current transcript + interim text
+            chatInputEl.value = currentTranscript + interimText;
+            autoResizeTextArea(chatInputEl);
+          }
+        },
+        
+        // Final transcript chunks - accumulate into currentTranscript
+        onFinalTranscript: (finalText) => {
+          // Add final text to current transcript
+          currentTranscript += finalText + ' ';
+          
+          // Update input field
+          if (chatInputEl) {
+            chatInputEl.value = currentTranscript.trim();
+            autoResizeTextArea(chatInputEl);
+          }
+        },
+        
+        // Error handling
+        onError: (error) => {
+          console.error('[handleMicClick] STT error:', error);
+          
+          // Check if it's a permission error
+          if (error.message && error.message.includes('permission denied')) {
+            // Show persistent error message near mic button with link to settings
+            // showMicPermissionError('Please allow microphone access in your browser settings.');
+            // Update permission state
+            sttService.permissionState = 'denied';
+          } else {
+            // Show temporary toast for other errors
+            showSTTError(error.message || 'Speech recognition error');
+          }
+          
+          // Reset state
+          isRecording = false;
+          updateMicButtonState(false);
+          
+          // Re-enable send button
+          if (chatSendBtn) {
+            chatSendBtn.disabled = false;
+          }
+        }
+      });
+      
+      isRecording = true;
+      updateMicButtonState(true);
+      
+    } catch (error) {
+      console.error('[handleMicClick] Failed to start recording:', error);
+      
+      // Check if it's a permission error
+      // This handles cases where getUserMedia throws NotAllowedError even after permission check
+      if (error.message && (error.message.includes('permission denied') || error.message.includes('NotAllowedError'))) {
+        // Mark permission as denied to prevent future requests
+        sttService.permissionState = 'denied';
+        // Show persistent error message near mic button with link to settings
+        // showMicPermissionError('Please allow microphone access in your browser settings.');
+      } else {
+        // Show temporary toast for other errors
+        showSTTError(error.message || 'Failed to start recording');
+      }
+      
+      // Reset state
+      isRecording = false;
+      updateMicButtonState(false);
+      
+      // Re-enable send button
+      if (chatSendBtn) {
+        chatSendBtn.disabled = false;
+      }
+    }
+  }
+}
+
 // autoResizeTextArea is imported from ./modules/ui-utils.js
 
 /**
@@ -1730,8 +2070,13 @@ async function initChat() {
     chatInputEl.addEventListener("input", () => autoResizeTextArea(chatInputEl));
 
     // Submit on Enter, allow Shift+Enter for newline
+    // Don't submit if currently recording (let STT handle it)
     chatInputEl.addEventListener("keydown", (event) => {
       if (event.key === "Enter" && !event.shiftKey) {
+        // Don't submit if recording - let STT handle stopping and sending
+        if (isRecording) {
+          return;
+        }
         event.preventDefault();
         if (chatFormEl) {
           chatFormEl.requestSubmit();
@@ -1761,6 +2106,16 @@ async function initChat() {
 
   if (memoryStatsBtn) {
     memoryStatsBtn.addEventListener("click", handleMemoryStatsClick);
+  }
+
+  // Speech-to-text microphone button
+  if (chatMicBtn) {
+    chatMicBtn.addEventListener("click", handleMicClick);
+    
+    // Hide microphone button if STT is not supported
+    if (!sttService.isAvailable()) {
+      chatMicBtn.style.display = 'none';
+    }
   }
   
   // Initialize button classes (not responding initially)
