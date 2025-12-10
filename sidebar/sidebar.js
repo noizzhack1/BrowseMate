@@ -785,13 +785,16 @@ function createMessageIcons(container, body, role, originalText = null) {
     body.addEventListener("keydown", async (e) => {
       if (!isEditing) return;
       
-      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        // Enter (without Shift) saves and exits edit mode
         e.preventDefault();
         await saveAndResend();
       } else if (e.key === 'Escape') {
+        // Escape cancels editing
         e.preventDefault();
         cancelEditing();
       }
+      // Shift+Enter allows newlines in the editable content
     });
   }
   
