@@ -47,14 +47,16 @@ async function executeWithRetry(executeFn, maxAttempts = MAX_ATTEMPTS) {
       // Add error to array for final report
       errors.push(`Attempt ${attempt}: ${result.message}`);
 
-      // Don't retry if it's a "not found" error - the element simply doesn't exist
+      // Don't retry if it's a "not found" error or page error - the element doesn't exist or page is in error state
       if (result.message && (
         result.message.includes('not found') ||
         result.message.includes('Element not found') ||
         result.message.includes('Button not found') ||
-        result.message.includes('Link not found')
+        result.message.includes('Link not found') ||
+        result.message.includes('error page') ||
+        result.message.includes('No active tab')
       )) {
-        Logger.info('Element not found - skipping retry attempts');
+        Logger.info('Non-retryable error - skipping retry attempts');
         break;
       }
 
@@ -64,14 +66,16 @@ async function executeWithRetry(executeFn, maxAttempts = MAX_ATTEMPTS) {
       // Add error message to array
       errors.push(`Attempt ${attempt}: ${error.message}`);
 
-      // Don't retry if it's a "not found" error
+      // Don't retry if it's a "not found" error or page error
       if (error.message && (
         error.message.includes('not found') ||
         error.message.includes('Element not found') ||
         error.message.includes('Button not found') ||
-        error.message.includes('Link not found')
+        error.message.includes('Link not found') ||
+        error.message.includes('error page') ||
+        error.message.includes('No active tab')
       )) {
-        Logger.info('Element not found - skipping retry attempts');
+        Logger.info('Non-retryable error - skipping retry attempts');
         break;
       }
     }

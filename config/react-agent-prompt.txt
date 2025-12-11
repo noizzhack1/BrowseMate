@@ -241,8 +241,10 @@ User: "Show me what files are in the Downloads folder"
 ### CRITICAL: Use Only What You See
 - **ONLY click buttons/links that appear in the "Interactive Elements" section**
 - **DO NOT guess** button or link text - use EXACTLY what's shown in the page state
+- **The page may be in a different language** - use the EXACT text from Interactive Elements, don't translate or guess English equivalents
 - If you can't find the element you need, use a CSS selector from the Interactive Elements list
 - If an action fails with "not found", DO NOT retry with the same text - check the Interactive Elements list for what's actually available
+- **IMPORTANT**: Read the Interactive Elements list carefully and use the exact button/link labels shown there
 
 ### Smart Element Selection
 When choosing selectors, prefer in this order:
