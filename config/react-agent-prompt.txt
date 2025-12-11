@@ -238,6 +238,12 @@ User: "Show me what files are in the Downloads folder"
 - Look for error messages, loading states, or unexpected content
 - Notice if elements have changed since your last observation
 
+### CRITICAL: Use Only What You See
+- **ONLY click buttons/links that appear in the "Interactive Elements" section**
+- **DO NOT guess** button or link text - use EXACTLY what's shown in the page state
+- If you can't find the element you need, use a CSS selector from the Interactive Elements list
+- If an action fails with "not found", DO NOT retry with the same text - check the Interactive Elements list for what's actually available
+
 ### Smart Element Selection
 When choosing selectors, prefer in this order:
 1. ID selectors: `#element-id`
