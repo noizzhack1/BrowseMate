@@ -1693,6 +1693,21 @@ let micPermissionErrorEl = null; // Persistent error message element near mic bu
 let shouldUpdateInput = true; // Flag to prevent callbacks from updating input after recording stops
 
 /**
+ * Replace "noise" with "noizz" in text (case-insensitive)
+ * Uses word boundary to match whole words only
+ * @param {string} text - The text to process
+ * @returns {string} The text with "noise" replaced by "noizz"
+ */
+function replaceNoiseWithNoizz(text) {
+  if (!text || typeof text !== 'string') {
+    return text;
+  }
+  // Use regex with word boundary (\b) to match whole words only
+  // 'gi' flags: g = global (all occurrences), i = case-insensitive
+  return text.replace(/\bnoise\b/gi, 'noizz');
+}
+
+/**
  * Show error message in UI (non-intrusive toast notification)
  * @param {string} message - Error message to display
  */
@@ -1898,13 +1913,16 @@ async function handleMicClick() {
     
     // If we have a final transcript, send it
     if (currentTranscript.trim() && chatInputEl) {
-      const textToSend = currentTranscript.trim();
+      let textToSend = currentTranscript.trim();
+      
+      // Replace "noise" with "noizz" before sending
+      textToSend = replaceNoiseWithNoizz(textToSend);
       
       // Clear input field BEFORE setting value to prevent race conditions
       chatInputEl.value = '';
       autoResizeTextArea(chatInputEl);
       
-      // Set the value for form submission
+      // Set the value for form submission (with replacement applied)
       chatInputEl.value = textToSend;
       autoResizeTextArea(chatInputEl);
       
@@ -2367,11 +2385,15 @@ async function initChat() {
         
         if (currentTranscript.trim() && chatInputEl) {
           textToSend = currentTranscript.trim();
+          // Replace "noise" with "noizz" before sending
+          textToSend = replaceNoiseWithNoizz(textToSend);
           chatInputEl.value = textToSend;
           autoResizeTextArea(chatInputEl);
         } else if (chatInputEl && chatInputEl.value.trim()) {
           // If there's any text in the input (from interim results), use it
           textToSend = chatInputEl.value.trim();
+          // Replace "noise" with "noizz" before sending
+          textToSend = replaceNoiseWithNoizz(textToSend);
         }
         
         // Auto-send the message (same as pressing Send button)
@@ -2382,7 +2404,7 @@ async function initChat() {
             autoResizeTextArea(chatInputEl);
           }
           
-          // Set the value temporarily for form submission
+          // Set the value temporarily for form submission (with replacement applied)
           chatInputEl.value = textToSend;
           chatFormEl.requestSubmit();
           
