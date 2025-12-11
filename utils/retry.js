@@ -180,129 +180,115 @@ async function dismissBlockersInPage(tabId) {
 }
 
 /**
- * Execute a function with retry logic
- * Keeps trying until success or max attempts reached
- * @param {Function} executeFn - Async function to execute, receives attempt number, should return {success: boolean, message: string}
- * @param {number} maxAttempts - Maximum number of attempts (default: 3)
+ * Execute a function with a single primary attempt and one optional alternate approach
+ * If the primary attempt fails, we optionally try an alternate strategy once.
+ * @param {Function} executeFn - Async function to execute, receives (attempt, context), should return {success: boolean, message: string}
+ * @param {Object|number} options - Options object or legacy maxAttempts number (legacy value is ignored; kept for compatibility)
+ * @param {Function} [options.alternateApproach] - Optional alternate approach function, receives (attempt, context)
  * @returns {Promise<{success: boolean, message: string, attempts: number}>} - Result with attempt count
  */
-async function executeWithRetry(executeFn, maxAttempts = MAX_ATTEMPTS) {
-  // Array to track all error messages for final report
+async function executeWithRetry(executeFn, options = {}) {
+  const alternateApproach = typeof options === 'number'
+    ? null
+    : options?.alternateApproach;
+
   const errors = [];
 
-  // Attempt execution up to maxAttempts times
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    // Log current attempt number
-    Logger.info(`Execution attempt ${attempt}/${maxAttempts}`);
+  const runAttempt = async (runner, attempt, useAlternateApproach, previousErrors) => {
+    return runner(attempt, {
+      attempt,
+      maxAttempts: 1,
+      previousErrors: [...previousErrors],
+      useAlternateApproach,
+      isFinalAttempt: true
+    });
+  };
 
-    try {
-      // Call the execution function with current attempt number
-      // This allows executeFn to adjust strategy on retries
-      const result = await executeFn(attempt);
+  // Primary attempt
+  Logger.info('Execution attempt 1/1 (primary)');
+  try {
+    const result = await runAttempt(executeFn, 1, false, errors);
+    if (result.success) {
+      Logger.info('Action succeeded on attempt 1');
+      return { ...result, attempts: 1 };
+    }
 
-      // If execution was successful, return immediately with success
-      if (result.success) {
-        // Log success message
-        Logger.info(`Action succeeded on attempt ${attempt}`);
-        // Return result with attempt count added
-        return { ...result, attempts: attempt };
-      }
+    Logger.warn(`Attempt 1 failed: ${result.message}`);
+    errors.push(`Attempt 1: ${result.message}`);
 
-      // If not successful, log the failure and store error message
-      Logger.warn(`Attempt ${attempt} failed: ${result.message}`);
-      // Add error to array for final report
-      errors.push(`Attempt ${attempt}: ${result.message}`);
+    const isNotFoundError = result.message && (
+      result.message.includes('not found') ||
+      result.message.includes('Element not found') ||
+      result.message.includes('Button not found') ||
+      result.message.includes('Link not found')
+    );
 
-      // Check if this is a "not found" error that might be caused by blockers
-      const isNotFoundError = result.message && (
-        result.message.includes('not found') ||
-        result.message.includes('Element not found') ||
-        result.message.includes('Button not found') ||
-        result.message.includes('Link not found')
-      );
+    const isNonRetryable = result.message && (
+      result.message.includes('error page') ||
+      result.message.includes('No active tab')
+    );
 
-      // Check if this is a non-retryable error (page errors, no active tab)
-      const isNonRetryable = result.message && (
-        result.message.includes('error page') ||
-        result.message.includes('No active tab')
-      );
+    // If non-retryable, bail immediately
+    if (isNonRetryable) {
+      Logger.info('Non-retryable error - not attempting alternate approach');
+      return {
+        success: false,
+        message: errors[0].replace(/^Attempt \d+: /, ''),
+        attempts: 1
+      };
+    }
 
-      if (isNonRetryable) {
-        Logger.info('Non-retryable error - skipping retry attempts');
-        break;
-      }
-
-      // If "not found" error and we have retries left, try to dismiss blockers
-      if (isNotFoundError && attempt < maxAttempts) {
-        Logger.info('[retry] Element not found - checking for blockers before retry');
-
-        try {
-          // Get active tab ID
-          const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-          if (tab && tab.id) {
-            // Try to dismiss blockers
-            const blockerDismissed = await dismissBlockersInPage(tab.id);
-
-            if (blockerDismissed) {
-              Logger.info('[retry] Blocker dismissed - will retry action');
-              // Wait a bit for page to settle after dismissal
-              await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
-            } else {
-              // No blocker found, wait before retry anyway (element might be loading)
-              Logger.info('[retry] No blocker found - waiting before retry');
-              await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
-            }
+    // If not found, try dismissing blockers before alternate approach
+    if (isNotFoundError) {
+      Logger.info('[retry] Element not found - checking for blockers before alternate approach');
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab && tab.id) {
+          const blockerDismissed = await dismissBlockersInPage(tab.id);
+          if (blockerDismissed) {
+            Logger.info('[retry] Blocker dismissed - pausing before alternate approach');
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
           }
-        } catch (dismissError) {
-          Logger.warn('[retry] Error during blocker dismissal:', dismissError);
-          // Continue with retry anyway
-          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
         }
-      } else if (attempt < maxAttempts) {
-        // Wait before next retry
-        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
-      }
-
-    } catch (error) {
-      // Handle unexpected errors (exceptions thrown by executeFn)
-      Logger.error(`Attempt ${attempt} threw error:`, error);
-      // Add error message to array
-      errors.push(`Attempt ${attempt}: ${error.message}`);
-
-      // Check for non-retryable errors
-      if (error.message && (
-        error.message.includes('error page') ||
-        error.message.includes('No active tab')
-      )) {
-        Logger.info('Non-retryable error - skipping retry attempts');
-        break;
-      }
-
-      // Wait before retry
-      if (attempt < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+      } catch (dismissError) {
+        Logger.warn('[retry] Error during blocker dismissal:', dismissError);
       }
     }
-  }
-  
-  // All attempts failed - log final failure
-  const actualAttempts = errors.length;
-  Logger.error(`All ${actualAttempts} attempts failed`);
 
-  // Return failure result with all accumulated error messages
+  } catch (error) {
+    Logger.error('Attempt 1 threw error:', error);
+    errors.push(`Attempt 1: ${error.message}`);
+  }
+
+  // Alternate approach attempt (only once)
+  if (typeof alternateApproach === 'function') {
+    Logger.info('[alternate] Execution attempt 2/2');
+    try {
+      const altResult = await runAttempt(alternateApproach, 2, true, errors);
+      if (altResult.success) {
+        Logger.info('Alternate approach succeeded on attempt 2');
+        return { ...altResult, attempts: 2 };
+      }
+
+      Logger.warn(`Alternate approach failed: ${altResult.message}`);
+      errors.push(`Attempt 2: ${altResult.message}`);
+    } catch (altError) {
+      Logger.error('Alternate approach threw error:', altError);
+      errors.push(`Attempt 2: ${altError.message}`);
+    }
+  }
+
+  // Final failure
+  const attemptCount = errors.length || 1;
+  Logger.error(`All ${attemptCount} attempts failed`);
   return {
-    // Mark as failed
     success: false,
-    // Combine all error messages into final message
-    // If only one attempt, show simpler message
-    message: actualAttempts === 1
+    message: attemptCount === 1
       ? errors[0].replace(/^Attempt \d+: /, '')
-      : `Failed after ${actualAttempts} attempts:\n${errors.join('\n')}`,
-    // Include actual attempt count
-    attempts: actualAttempts
+      : `Failed after ${attemptCount} attempts:\n${errors.join('\n')}`,
+    attempts: attemptCount
   };
 }
 
 // Export for ES6 modules
 export { executeWithRetry, MAX_ATTEMPTS };
-
