@@ -2132,6 +2132,267 @@ async function initChat() {
     }
   }
   
+  // =========================
+  // Spacebar hold-to-record functionality
+  // =========================
+  
+  let spacebarPressed = false;
+  let spacebarRecordingStarted = false;
+  let wasRecordingWhenSpacebarPressed = false;
+  
+  /**
+   * Check if spacebar recording should be active
+   * Returns false if user is typing in input field or if a request is in progress
+   */
+  function shouldActivateSpacebarRecording() {
+    // Don't activate if user is typing in input field
+    if (chatInputEl && document.activeElement === chatInputEl) {
+      return false;
+    }
+    
+    // Don't activate if a request is in progress
+    if (isRequestInProgress) {
+      return false;
+    }
+    
+    // Don't activate if STT is not supported
+    if (!sttService.isAvailable()) {
+      return false;
+    }
+    
+    return true;
+  }
+  
+  /**
+   * Start recording on spacebar press
+   */
+  async function startSpacebarRecording() {
+    // Check if we should activate
+    if (!shouldActivateSpacebarRecording()) {
+      return;
+    }
+    
+    // If already recording, don't start another session
+    // But allow spacebar to stop existing recording on release
+    if (isRecording) {
+      return;
+    }
+    
+    try {
+      // Check microphone permission status before attempting to record
+      const permissionStatus = await sttService.checkMicrophonePermission();
+      
+      // If permission is denied, don't try to request again
+      if (permissionStatus === 'denied' || sttService.getPermissionState() === 'denied') {
+        return;
+      }
+      
+      // Clear any existing error message
+      hideMicPermissionError();
+      
+      // Clear input field
+      if (chatInputEl) {
+        chatInputEl.value = '';
+        autoResizeTextArea(chatInputEl);
+      }
+      
+      // Disable send button while recording
+      if (chatSendBtn) {
+        chatSendBtn.disabled = true;
+      }
+      
+      // Reset transcript
+      currentTranscript = '';
+      
+      // Start recording with callbacks
+      await sttService.startRecording({
+        // Live transcript updates - update input field as user speaks
+        onTranscriptUpdate: (interimText) => {
+          if (chatInputEl) {
+            // Update input with current transcript + interim text
+            chatInputEl.value = currentTranscript + interimText;
+            autoResizeTextArea(chatInputEl);
+          }
+        },
+        
+        // Final transcript chunks - accumulate into currentTranscript
+        onFinalTranscript: (finalText) => {
+          // Add final text to current transcript
+          currentTranscript += finalText + ' ';
+          
+          // Update input field
+          if (chatInputEl) {
+            chatInputEl.value = currentTranscript.trim();
+            autoResizeTextArea(chatInputEl);
+          }
+        },
+        
+        // Error handling
+        onError: (error) => {
+          console.error('[startSpacebarRecording] STT error:', error);
+          
+          // Check if it's a permission error
+          if (error.message && error.message.includes('permission denied')) {
+            // Update permission state
+            sttService.permissionState = 'denied';
+          } else {
+            // Show temporary toast for other errors (only if not a no-speech error)
+            if (error.message && !error.message.includes('no-speech')) {
+              showSTTError(error.message || 'Speech recognition error');
+            }
+          }
+          
+          // Reset state
+          isRecording = false;
+          spacebarRecordingStarted = false;
+          updateMicButtonState(false);
+          
+          // Re-enable send button
+          if (chatSendBtn) {
+            chatSendBtn.disabled = false;
+          }
+        }
+      });
+      
+      isRecording = true;
+      spacebarRecordingStarted = true;
+      updateMicButtonState(true);
+      
+    } catch (error) {
+      console.error('[startSpacebarRecording] Failed to start recording:', error);
+      
+      // Check if it's a permission error
+      if (error.message && (error.message.includes('permission denied') || error.message.includes('NotAllowedError'))) {
+        // Mark permission as denied to prevent future requests
+        sttService.permissionState = 'denied';
+      } else {
+        // Show temporary toast for other errors
+        showSTTError(error.message || 'Failed to start recording');
+      }
+      
+      // Reset state
+      isRecording = false;
+      spacebarRecordingStarted = false;
+      updateMicButtonState(false);
+      
+      // Re-enable send button
+      if (chatSendBtn) {
+        chatSendBtn.disabled = false;
+      }
+    }
+  }
+  
+  /**
+   * Stop recording and send text on spacebar release
+   */
+  function stopSpacebarRecordingAndSend() {
+    // Only stop if we're currently recording
+    if (!isRecording) {
+      return;
+    }
+    
+    try {
+      // Stop recording
+      sttService.stopRecording();
+      isRecording = false;
+      const wasSpacebarRecording = spacebarRecordingStarted;
+      spacebarRecordingStarted = false;
+      updateMicButtonState(false);
+      
+      // Re-enable send button
+      if (chatSendBtn) {
+        chatSendBtn.disabled = false;
+      }
+      
+      // Auto-send if:
+      // 1. Recording was started via spacebar (spacebarRecordingStarted was true)
+      // 2. OR recording was already active when spacebar was pressed (user wants to stop and send)
+      if (wasSpacebarRecording || wasRecordingWhenSpacebarPressed) {
+        if (currentTranscript.trim() && chatInputEl) {
+          chatInputEl.value = currentTranscript.trim();
+          autoResizeTextArea(chatInputEl);
+          
+          // Auto-send the message (same as pressing Send button)
+          if (chatFormEl) {
+            chatFormEl.requestSubmit();
+          }
+        } else if (chatInputEl && chatInputEl.value.trim()) {
+          // If there's any text in the input (from interim results), send it
+          if (chatFormEl) {
+            chatFormEl.requestSubmit();
+          }
+        }
+      }
+      
+      // Reset transcript
+      currentTranscript = '';
+      wasRecordingWhenSpacebarPressed = false;
+      
+    } catch (error) {
+      console.error('[stopSpacebarRecordingAndSend] Error stopping recording:', error);
+      
+      // Ensure state is reset even on error
+      isRecording = false;
+      spacebarRecordingStarted = false;
+      updateMicButtonState(false);
+      wasRecordingWhenSpacebarPressed = false;
+      
+      // Re-enable send button
+      if (chatSendBtn) {
+        chatSendBtn.disabled = false;
+      }
+      
+      // Show error if it's not just a normal stop
+      if (error.message && !error.message.includes('aborted')) {
+        showSTTError('Error stopping transcription: ' + (error.message || 'Unknown error'));
+      }
+    }
+  }
+  
+  // Add spacebar keydown event listener
+  document.addEventListener('keydown', async (event) => {
+    // Only handle Spacebar key
+    if (event.code !== 'Space') {
+      return;
+    }
+    
+    // Prevent default spacebar behavior (scrolling) when recording
+    // But only if we're not in an input field
+    if (!chatInputEl || document.activeElement !== chatInputEl) {
+      // Mark spacebar as pressed
+      if (!spacebarPressed) {
+        spacebarPressed = true;
+        
+        // Track if we were already recording when spacebar was pressed
+        wasRecordingWhenSpacebarPressed = isRecording;
+        
+        // Start recording if not already recording
+        if (!isRecording) {
+          await startSpacebarRecording();
+        }
+      }
+      
+      // Prevent default to avoid scrolling when holding spacebar
+      event.preventDefault();
+    }
+  });
+  
+  // Add spacebar keyup event listener
+  document.addEventListener('keyup', (event) => {
+    // Only handle Spacebar key
+    if (event.code !== 'Space') {
+      return;
+    }
+    
+    // Reset spacebar pressed state
+    if (spacebarPressed) {
+      spacebarPressed = false;
+      
+      // Stop recording and send text
+      stopSpacebarRecordingAndSend();
+    }
+  });
+  
   // Initialize button classes (not responding initially)
   updateButtonClasses(false);
 }
