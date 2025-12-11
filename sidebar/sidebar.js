@@ -422,7 +422,8 @@ async function resendMessageAndReplace(editedText, userMessageWrapper, oldAssist
     };
     
     // Call LLM API with edited text
-    reply = await callLLMAPI(editedText, includeContext, onProgress, abortSignal, onInteraction);
+    // Pass isContinuation=true to indicate this is an edit/resend, not a new task
+    reply = await callLLMAPI(editedText, includeContext, onProgress, abortSignal, onInteraction, null, null, true);
   } catch (error) {
     if (abortSignal.aborted || error.message === 'Request cancelled by user') {
       if (chatMessagesEl && chatMessagesEl.lastChild) {
@@ -1280,9 +1281,10 @@ function escapeHtml(text) {
  * @param {Function} onInteraction - Optional callback for user interactions (question) => Promise<answer>
  * @param {Function} onStreamChunk - Optional callback for streaming answer chunks
  * @param {Function} onThinking - Optional callback for agent thinking updates
+ * @param {boolean} isContinuation - If true, this is a message edit/resend (skip extensive planning)
  * @returns {Promise<string>}
  */
-async function callLLMAPI(userText, includeContext = false, onProgress = null, abortSignal = null, onInteraction = null, onStreamChunk = null, onThinking = null) {
+async function callLLMAPI(userText, includeContext = false, onProgress = null, abortSignal = null, onInteraction = null, onStreamChunk = null, onThinking = null, isContinuation = false) {
   console.log('[callLLMAPI] Starting LLM API call');
   console.log('[callLLMAPI] User text:', userText);
   console.log('[callLLMAPI] Include context:', includeContext);
@@ -1319,7 +1321,8 @@ async function callLLMAPI(userText, includeContext = false, onProgress = null, a
     // Use Task A orchestrator to process the request
     // Task A will determine if it's a question or action and route accordingly
     console.log('[callLLMAPI] Calling processRequest...');
-    const result = await processRequest(context, userText, onProgress, abortSignal, conversationHistory, onInteraction, onStreamChunk, onThinking);
+    console.log('[callLLMAPI] isContinuation:', isContinuation);
+    const result = await processRequest(context, userText, onProgress, abortSignal, conversationHistory, onInteraction, onStreamChunk, onThinking, isContinuation);
     console.log('[callLLMAPI] ProcessRequest completed');
     
     // Check if request was aborted
