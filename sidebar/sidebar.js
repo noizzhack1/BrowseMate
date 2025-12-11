@@ -1690,6 +1690,7 @@ const sttService = new SpeechToTextService();
 let isRecording = false;
 let currentTranscript = ''; // Store current transcript for finalization
 let micPermissionErrorEl = null; // Persistent error message element near mic button
+let shouldUpdateInput = true; // Flag to prevent callbacks from updating input after recording stops
 
 /**
  * Show error message in UI (non-intrusive toast notification)
@@ -1882,6 +1883,9 @@ async function handleMicClick() {
   }
 
   if (isRecording) {
+    // Prevent callbacks from updating input after we stop
+    shouldUpdateInput = false;
+    
     // Stop recording
     sttService.stopRecording();
     isRecording = false;
@@ -1894,12 +1898,32 @@ async function handleMicClick() {
     
     // If we have a final transcript, send it
     if (currentTranscript.trim() && chatInputEl) {
-      chatInputEl.value = currentTranscript.trim();
+      const textToSend = currentTranscript.trim();
+      
+      // Clear input field BEFORE setting value to prevent race conditions
+      chatInputEl.value = '';
+      autoResizeTextArea(chatInputEl);
+      
+      // Set the value for form submission
+      chatInputEl.value = textToSend;
       autoResizeTextArea(chatInputEl);
       
       // Auto-send the message (same as pressing Send button)
-      if (chatFormEl) {
+      if (chatFormEl && textToSend) {
         chatFormEl.requestSubmit();
+        
+        // Clear input field immediately after submission
+        // handleChatSubmit will also clear it, but this ensures it's cleared
+        if (chatInputEl) {
+          chatInputEl.value = '';
+          autoResizeTextArea(chatInputEl);
+        }
+      }
+    } else {
+      // No transcript to send, but clear input field anyway
+      if (chatInputEl) {
+        chatInputEl.value = '';
+        autoResizeTextArea(chatInputEl);
       }
     }
     
@@ -1936,11 +1960,15 @@ async function handleMicClick() {
       // Reset transcript
       currentTranscript = '';
       
+      // Reset flag to allow input updates
+      shouldUpdateInput = true;
+      
       // Start recording with callbacks
       await sttService.startRecording({
         // Live transcript updates - update input field as user speaks
         onTranscriptUpdate: (interimText) => {
-          if (chatInputEl) {
+          // Only update if recording is still active and we should update input
+          if (shouldUpdateInput && isRecording && chatInputEl) {
             // Update input with current transcript + interim text
             chatInputEl.value = currentTranscript + interimText;
             autoResizeTextArea(chatInputEl);
@@ -1949,13 +1977,16 @@ async function handleMicClick() {
         
         // Final transcript chunks - accumulate into currentTranscript
         onFinalTranscript: (finalText) => {
-          // Add final text to current transcript
-          currentTranscript += finalText + ' ';
-          
-          // Update input field
-          if (chatInputEl) {
-            chatInputEl.value = currentTranscript.trim();
-            autoResizeTextArea(chatInputEl);
+          // Only update if recording is still active and we should update input
+          if (shouldUpdateInput && isRecording) {
+            // Add final text to current transcript
+            currentTranscript += finalText + ' ';
+            
+            // Update input field
+            if (chatInputEl) {
+              chatInputEl.value = currentTranscript.trim();
+              autoResizeTextArea(chatInputEl);
+            }
           }
         },
         
@@ -1975,12 +2006,19 @@ async function handleMicClick() {
           }
           
           // Reset state
+          shouldUpdateInput = false;
           isRecording = false;
           updateMicButtonState(false);
           
           // Re-enable send button
           if (chatSendBtn) {
             chatSendBtn.disabled = false;
+          }
+          
+          // Clear input field on error
+          if (chatInputEl) {
+            chatInputEl.value = '';
+            autoResizeTextArea(chatInputEl);
           }
         }
       });
@@ -2204,11 +2242,15 @@ async function initChat() {
       // Reset transcript
       currentTranscript = '';
       
+      // Reset flag to allow input updates
+      shouldUpdateInput = true;
+      
       // Start recording with callbacks
       await sttService.startRecording({
         // Live transcript updates - update input field as user speaks
         onTranscriptUpdate: (interimText) => {
-          if (chatInputEl) {
+          // Only update if recording is still active and we should update input
+          if (shouldUpdateInput && isRecording && chatInputEl) {
             // Update input with current transcript + interim text
             chatInputEl.value = currentTranscript + interimText;
             autoResizeTextArea(chatInputEl);
@@ -2217,13 +2259,16 @@ async function initChat() {
         
         // Final transcript chunks - accumulate into currentTranscript
         onFinalTranscript: (finalText) => {
-          // Add final text to current transcript
-          currentTranscript += finalText + ' ';
-          
-          // Update input field
-          if (chatInputEl) {
-            chatInputEl.value = currentTranscript.trim();
-            autoResizeTextArea(chatInputEl);
+          // Only update if recording is still active and we should update input
+          if (shouldUpdateInput && isRecording) {
+            // Add final text to current transcript
+            currentTranscript += finalText + ' ';
+            
+            // Update input field
+            if (chatInputEl) {
+              chatInputEl.value = currentTranscript.trim();
+              autoResizeTextArea(chatInputEl);
+            }
           }
         },
         
@@ -2243,6 +2288,7 @@ async function initChat() {
           }
           
           // Reset state
+          shouldUpdateInput = false;
           isRecording = false;
           spacebarRecordingStarted = false;
           updateMicButtonState(false);
@@ -2250,6 +2296,12 @@ async function initChat() {
           // Re-enable send button
           if (chatSendBtn) {
             chatSendBtn.disabled = false;
+          }
+          
+          // Clear input field on error
+          if (chatInputEl) {
+            chatInputEl.value = '';
+            autoResizeTextArea(chatInputEl);
           }
         }
       });
@@ -2292,6 +2344,9 @@ async function initChat() {
     }
     
     try {
+      // Prevent callbacks from updating input after we stop
+      shouldUpdateInput = false;
+      
       // Stop recording
       sttService.stopRecording();
       isRecording = false;
@@ -2308,19 +2363,47 @@ async function initChat() {
       // 1. Recording was started via spacebar (spacebarRecordingStarted was true)
       // 2. OR recording was already active when spacebar was pressed (user wants to stop and send)
       if (wasSpacebarRecording || wasRecordingWhenSpacebarPressed) {
+        let textToSend = '';
+        
         if (currentTranscript.trim() && chatInputEl) {
-          chatInputEl.value = currentTranscript.trim();
+          textToSend = currentTranscript.trim();
+          chatInputEl.value = textToSend;
           autoResizeTextArea(chatInputEl);
-          
-          // Auto-send the message (same as pressing Send button)
-          if (chatFormEl) {
-            chatFormEl.requestSubmit();
-          }
         } else if (chatInputEl && chatInputEl.value.trim()) {
-          // If there's any text in the input (from interim results), send it
-          if (chatFormEl) {
-            chatFormEl.requestSubmit();
+          // If there's any text in the input (from interim results), use it
+          textToSend = chatInputEl.value.trim();
+        }
+        
+        // Auto-send the message (same as pressing Send button)
+        if (textToSend && chatFormEl) {
+          // Clear input field BEFORE submission to prevent any race conditions
+          if (chatInputEl) {
+            chatInputEl.value = '';
+            autoResizeTextArea(chatInputEl);
           }
+          
+          // Set the value temporarily for form submission
+          chatInputEl.value = textToSend;
+          chatFormEl.requestSubmit();
+          
+          // Clear input field immediately after submission
+          // handleChatSubmit will also clear it, but this ensures it's cleared
+          if (chatInputEl) {
+            chatInputEl.value = '';
+            autoResizeTextArea(chatInputEl);
+          }
+        } else {
+          // No text to send, but clear input field anyway
+          if (chatInputEl) {
+            chatInputEl.value = '';
+            autoResizeTextArea(chatInputEl);
+          }
+        }
+      } else {
+        // Not auto-sending, but clear input field anyway
+        if (chatInputEl) {
+          chatInputEl.value = '';
+          autoResizeTextArea(chatInputEl);
         }
       }
       
@@ -2332,6 +2415,7 @@ async function initChat() {
       console.error('[stopSpacebarRecordingAndSend] Error stopping recording:', error);
       
       // Ensure state is reset even on error
+      shouldUpdateInput = false;
       isRecording = false;
       spacebarRecordingStarted = false;
       updateMicButtonState(false);
@@ -2342,6 +2426,12 @@ async function initChat() {
         chatSendBtn.disabled = false;
       }
       
+      // Clear input field on error
+      if (chatInputEl) {
+        chatInputEl.value = '';
+        autoResizeTextArea(chatInputEl);
+      }
+      
       // Show error if it's not just a normal stop
       if (error.message && !error.message.includes('aborted')) {
         showSTTError('Error stopping transcription: ' + (error.message || 'Unknown error'));
@@ -2349,7 +2439,7 @@ async function initChat() {
     }
   }
   
-  // Add spacebar keydown event listener
+  // Add spacebar keydown event listener (for sidebar context)
   document.addEventListener('keydown', async (event) => {
     // Only handle Spacebar key
     if (event.code !== 'Space') {
@@ -2377,7 +2467,7 @@ async function initChat() {
     }
   });
   
-  // Add spacebar keyup event listener
+  // Add spacebar keyup event listener (for sidebar context)
   document.addEventListener('keyup', (event) => {
     // Only handle Spacebar key
     if (event.code !== 'Space') {
@@ -2390,6 +2480,29 @@ async function initChat() {
       
       // Stop recording and send text
       stopSpacebarRecordingAndSend();
+    }
+  });
+  
+  // Listen for messages from content script (global page spacebar events)
+  // Set up inside initChat so it has access to startSpacebarRecording and stopSpacebarRecordingAndSend
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'spacebar-transcription') {
+      if (message.action === 'start') {
+        // Start transcription when spacebar is pressed on the page
+        if (!isRecording && !isRequestInProgress) {
+          startSpacebarRecording().catch(error => {
+            console.error('[BrowseMate] Error starting transcription from content script:', error);
+          });
+        }
+        sendResponse({ success: true });
+      } else if (message.action === 'stop') {
+        // Stop transcription when spacebar is released on the page
+        if (isRecording) {
+          stopSpacebarRecordingAndSend();
+        }
+        sendResponse({ success: true });
+      }
+      return true; // Keep channel open for async response
     }
   });
   
