@@ -2195,6 +2195,8 @@ async function initChat() {
   let spacebarPressed = false;
   let spacebarRecordingStarted = false;
   let wasRecordingWhenSpacebarPressed = false;
+  let spacebarPressTimer = null;
+  const SPACEBAR_LONG_PRESS_TIME = 1000; // 1 second in milliseconds
   
   /**
    * Check if spacebar recording should be active
@@ -2468,23 +2470,36 @@ async function initChat() {
       return;
     }
     
-    // Prevent default spacebar behavior (scrolling) when recording
-    // But only if we're not in an input field
-    if (!chatInputEl || document.activeElement !== chatInputEl) {
-      // Mark spacebar as pressed
-      if (!spacebarPressed) {
-        spacebarPressed = true;
-        
-        // Track if we were already recording when spacebar was pressed
-        wasRecordingWhenSpacebarPressed = isRecording;
-        
-        // Start recording if not already recording
+    // Only handle if we're not in the chat input field
+    // If in input field, allow normal spacebar behavior
+    if (chatInputEl && document.activeElement === chatInputEl) {
+      return; // Allow normal spacebar behavior in input field
+    }
+    
+    // Mark spacebar as pressed and start long press timer
+    if (!spacebarPressed) {
+      spacebarPressed = true;
+      
+      // Track if we were already recording when spacebar was pressed
+      wasRecordingWhenSpacebarPressed = isRecording;
+      
+      // Prevent default on initial press to prevent space insertion
+      // We'll allow it if it turns out to be a short press (in keyup handler)
+      event.preventDefault();
+      
+      // Start timer for long press detection
+      spacebarPressTimer = setTimeout(async function() {
+        // Long press detected - start transcription
         if (!isRecording) {
           await startSpacebarRecording();
         }
-      }
-      
-      // Prevent default to avoid scrolling when holding spacebar
+      }, SPACEBAR_LONG_PRESS_TIME);
+    } else if (isRecording || spacebarRecordingStarted) {
+      // Spacebar is still held after long press, prevent default
+      event.preventDefault();
+    } else {
+      // Spacebar is still pressed but timer hasn't fired yet
+      // Continue preventing default to avoid space insertion
       event.preventDefault();
     }
   });
@@ -2496,12 +2511,24 @@ async function initChat() {
       return;
     }
     
+    // Clear the long press timer if spacebar is released before threshold
+    if (spacebarPressTimer) {
+      clearTimeout(spacebarPressTimer);
+      spacebarPressTimer = null;
+    }
+    
     // Reset spacebar pressed state
     if (spacebarPressed) {
-      spacebarPressed = false;
+      // If we were recording (long press was detected), stop and send
+      if (isRecording && spacebarRecordingStarted) {
+        stopSpacebarRecordingAndSend();
+      } else {
+        // Short press - insert space manually since we prevented default
+        // This is mainly for the sidebar context, but shouldn't be needed
+        // since we return early if in chatInputEl
+      }
       
-      // Stop recording and send text
-      stopSpacebarRecordingAndSend();
+      spacebarPressed = false;
     }
   });
   
