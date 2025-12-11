@@ -9,6 +9,8 @@
 
   let spacebarPressed = false;
   let spacebarHandled = false;
+  let spacebarPressTimer = null;
+  const SPACEBAR_LONG_PRESS_TIME = 1000; // 1 second in milliseconds
 
   /**
    * Send message to sidebar to start/stop transcription
@@ -32,7 +34,7 @@
   }
 
   /**
-   * Handle spacebar keydown - start transcription
+   * Handle spacebar keydown - start long press timer
    */
   function handleSpacebarDown(event) {
     // Only handle Spacebar key
@@ -40,23 +42,35 @@
       return;
     }
 
-    // Mark spacebar as pressed and handled
+    // Mark spacebar as pressed
     if (!spacebarPressed) {
       spacebarPressed = true;
-      spacebarHandled = true;
+      spacebarHandled = false; // Not handled yet, waiting for long press
       
-      // Prevent default spacebar behavior globally (scrolling, inserting spaces, etc.)
-      // This allows transcription to take priority over all other behaviors
+      // Prevent default on initial press to prevent space insertion
+      // We'll manually insert space if it turns out to be a short press
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
       
-      // Send message to sidebar to start transcription
-      sendTranscriptionMessage('start');
-      
-      console.log('[BrowseMate] Spacebar pressed - starting transcription');
+      // Start timer for long press detection
+      spacebarPressTimer = setTimeout(function() {
+        // Long press detected - mark as handled and start transcription
+        spacebarHandled = true;
+        
+        // Send message to sidebar to start transcription
+        sendTranscriptionMessage('start');
+        
+        console.log('[BrowseMate] Spacebar long press detected - starting transcription');
+      }, SPACEBAR_LONG_PRESS_TIME);
     } else if (spacebarHandled) {
-      // Spacebar is still held, prevent default to avoid repeated spaces
+      // Spacebar is still held after long press was detected, prevent default to avoid repeated spaces
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    } else {
+      // Spacebar is still pressed but timer hasn't fired yet
+      // Continue preventing default to avoid space insertion
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
@@ -64,7 +78,7 @@
   }
 
   /**
-   * Handle spacebar keyup - stop transcription
+   * Handle spacebar keyup - stop transcription or allow normal behavior for short press
    */
   function handleSpacebarUp(event) {
     // Only handle Spacebar key
@@ -72,7 +86,13 @@
       return;
     }
 
-    // If we handled the keydown, also handle keyup
+    // Clear the long press timer if spacebar is released before threshold
+    if (spacebarPressTimer) {
+      clearTimeout(spacebarPressTimer);
+      spacebarPressTimer = null;
+    }
+
+    // If we handled the keydown (long press), also handle keyup
     if (spacebarPressed && spacebarHandled) {
       event.preventDefault();
       event.stopPropagation();
@@ -87,8 +107,46 @@
       
       console.log('[BrowseMate] Spacebar released - stopping transcription');
     } else if (spacebarPressed) {
-      // Spacebar was pressed but we didn't handle it, just reset
+      // Spacebar was pressed but released before long press threshold (short press)
+      // Simulate a space keypress to restore normal behavior
       spacebarPressed = false;
+      spacebarHandled = false;
+      
+      // Don't prevent default - allow the keyup to proceed normally
+      // The space was already prevented in keydown, so we need to manually insert it
+      // if the user is in an input field
+      const activeElement = document.activeElement;
+      if (activeElement && (
+        activeElement.tagName === 'INPUT' || 
+        activeElement.tagName === 'TEXTAREA' || 
+        activeElement.isContentEditable
+      )) {
+        // Insert a space character at the cursor position
+        if (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA') {
+          const start = activeElement.selectionStart;
+          const end = activeElement.selectionEnd;
+          const value = activeElement.value;
+          activeElement.value = value.substring(0, start) + ' ' + value.substring(end);
+          activeElement.selectionStart = activeElement.selectionEnd = start + 1;
+          // Trigger input event
+          activeElement.dispatchEvent(new Event('input', { bubbles: true }));
+        } else if (activeElement.isContentEditable) {
+          // For contentEditable elements
+          const selection = window.getSelection();
+          if (selection.rangeCount > 0) {
+            const range = selection.getRangeAt(0);
+            range.deleteContents();
+            const textNode = document.createTextNode(' ');
+            range.insertNode(textNode);
+            range.setStartAfter(textNode);
+            range.collapse(true);
+            selection.removeAllRanges();
+            selection.addRange(range);
+          }
+        }
+      }
+      // For other cases (scrolling, etc.), the default behavior was prevented
+      // which is acceptable for a short press that we intercepted
     }
   }
 

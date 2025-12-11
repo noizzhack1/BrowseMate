@@ -22,6 +22,8 @@ import {
 } from './modules/memory-stats.js';
 // Import speech-to-text service
 import { SpeechToTextService } from './modules/speech-to-text.js';
+// Import text-to-speech service
+import { TextToSpeechService } from './modules/text-to-speech.js';
 
 // =========================
 // DOM references
@@ -51,6 +53,8 @@ const chatSendBtn = document.getElementById("chatSend");
 const memoryStatsBtn = document.getElementById("memoryStatsBtn");
 /** @type {HTMLButtonElement | null} */
 const chatMicBtn = document.getElementById("chatMic");
+/** @type {HTMLButtonElement | null} */
+const chatSpeakerBtn = document.getElementById("chatSpeaker");
 
 // =========================
 // Request cancellation state
@@ -936,6 +940,56 @@ function appendMessage(role, text, saveToMemory = true) {
     });
   }
   
+  // If this is an assistant message and TTS is enabled, speak it
+  console.log(`[appendMessage] TTS check - role: ${role}, ttsService: ${!!ttsService}, enabled: ${ttsService?.isEnabled()}, saveToMemory: ${saveToMemory}`);
+  
+  if (role === 'assistant' && ttsService && ttsService.isEnabled() && saveToMemory) {
+    // Get the text content (without HTML/markdown)
+    const textToSpeak = body.textContent || body.innerText || '';
+    const trimmedText = textToSpeak.trim();
+    
+    console.log(`[appendMessage] Text check - length: ${trimmedText.length}, isThinking: ${trimmedText === 'Thinking...'}`);
+    console.log(`[appendMessage] Text preview: "${trimmedText.substring(0, 100)}..."`);
+    
+    // Only speak if there's actual content and it's not a temporary placeholder
+    if (trimmedText && trimmedText !== 'Thinking...' && trimmedText.length > 0) {
+      console.log(`[appendMessage] ✓ TRIGGERING TTS for message`);
+      
+      // Small delay to ensure DOM is fully updated and message is rendered
+      setTimeout(() => {
+        console.log('[appendMessage] setTimeout fired, calling ttsService.speak()');
+        // The TTS service now handles queuing and stopping previous speech automatically
+        ttsService.speak(textToSpeak, {
+          onStart: () => {
+            console.log('[TTS appendMessage] ✓ Started speaking');
+          },
+          onEnd: () => {
+            console.log('[TTS appendMessage] ✓ Finished speaking');
+          },
+          onError: (error) => {
+            // Ignore "interrupted" and "canceled" errors as they're expected
+            if (error.message && 
+                !error.message.includes('interrupted') && 
+                !error.message.includes('canceled')) {
+              console.error('[TTS appendMessage] ✗ Error speaking:', error);
+            }
+          }
+        }).catch(error => {
+          // Ignore "interrupted" and "canceled" errors as they're expected when stopping/canceling
+          if (error.message && 
+              !error.message.includes('interrupted') && 
+              !error.message.includes('canceled')) {
+            console.error('[TTS appendMessage] ✗ Failed to speak:', error);
+          }
+        });
+      }, 150); // Small delay to ensure message is fully rendered
+    } else {
+      console.log('[appendMessage] ✗ Skipping TTS - empty or placeholder message');
+    }
+  } else {
+    console.log('[appendMessage] ✗ Skipping TTS - conditions not met');
+  }
+  
   return body;
 }
 
@@ -1047,6 +1101,77 @@ function updateStreamingMessage(messageBody, newContent, append = true) {
   // Auto-scroll to bottom
   if (chatMessagesEl) {
     chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+  }
+}
+
+/**
+ * Finalize streaming message - mark it as complete, save to memory, and trigger TTS
+ * @param {HTMLElement} messageBody - The message body element
+ * @param {string} finalText - The final complete text
+ */
+function finalizeStreamingMessage(messageBody, finalText) {
+  console.log('[finalizeStreamingMessage] Called');
+  console.log(`[finalizeStreamingMessage] messageBody exists: ${!!messageBody}`);
+  console.log(`[finalizeStreamingMessage] finalText length: ${finalText?.length}`);
+  console.log(`[finalizeStreamingMessage] memoryManager exists: ${!!memoryManager}`);
+  
+  if (!messageBody || !memoryManager) {
+    console.warn('[finalizeStreamingMessage] Missing messageBody or memoryManager');
+    return;
+  }
+  
+  // Mark as finalized
+  messageBody.dataset.finalized = 'true';
+  
+  // Save to memory
+  memoryManager.addMessage('assistant', finalText).catch(error => {
+    console.error('[finalizeStreamingMessage] Failed to save to memory:', error);
+  });
+  
+  // Trigger TTS for the finalized message if TTS is enabled
+  console.log(`[finalizeStreamingMessage] ttsService exists: ${!!ttsService}`);
+  console.log(`[finalizeStreamingMessage] ttsService.isEnabled(): ${ttsService?.isEnabled()}`);
+  
+  if (ttsService && ttsService.isEnabled()) {
+    const textToSpeak = messageBody.textContent || messageBody.innerText || '';
+    const trimmedText = textToSpeak.trim();
+    
+    console.log(`[finalizeStreamingMessage] Text to speak length: ${trimmedText.length}`);
+    console.log(`[finalizeStreamingMessage] Text preview: "${trimmedText.substring(0, 100)}..."`);
+    
+    if (trimmedText && trimmedText !== 'Thinking...') {
+      console.log(`[finalizeStreamingMessage] ✓ TRIGGERING TTS for finalized message`);
+      
+      // Small delay to ensure DOM is fully updated
+      setTimeout(() => {
+        console.log('[finalizeStreamingMessage] setTimeout fired, calling ttsService.speak()');
+        ttsService.speak(textToSpeak, {
+          onStart: () => {
+            console.log('[TTS finalizeStreamingMessage] ✓ Started speaking');
+          },
+          onEnd: () => {
+            console.log('[TTS finalizeStreamingMessage] ✓ Finished speaking');
+          },
+          onError: (error) => {
+            if (error.message && 
+                !error.message.includes('interrupted') && 
+                !error.message.includes('canceled')) {
+              console.error('[TTS finalizeStreamingMessage] ✗ Error speaking:', error);
+            }
+          }
+        }).catch(error => {
+          if (error.message && 
+              !error.message.includes('interrupted') && 
+              !error.message.includes('canceled')) {
+            console.error('[TTS finalizeStreamingMessage] ✗ Failed to speak:', error);
+          }
+        });
+      }, 200);
+    } else {
+      console.log('[finalizeStreamingMessage] ✗ Skipping TTS - empty or placeholder text');
+    }
+  } else {
+    console.log('[finalizeStreamingMessage] ✗ TTS service not available or disabled');
   }
 }
 
@@ -1666,13 +1791,12 @@ async function handleChatSubmit(event) {
       });
     }
   } else if (streamingMessageEl) {
-    // Streaming message already updated, nothing to do
-    // The reply contains the full message but it's already displayed
-    // Save the streaming reply to memory
-    if (memoryManager && reply && reply.trim()) {
-      memoryManager.addMessage("assistant", reply).catch(error => {
-        console.error('[handleChatSubmit] Failed to save streaming reply to memory:', error);
-      });
+    // Streaming message already updated during streaming
+    // Now finalize it (save to memory + trigger TTS)
+    console.log('[handleChatSubmit] Finalizing streaming message');
+    const finalText = streamingMessageEl.textContent || streamingMessageEl.innerText || reply || '';
+    if (finalText.trim()) {
+      finalizeStreamingMessage(streamingMessageEl, finalText);
     }
   } else if (reply && reply.trim()) {
     // Only append new message if we didn't have progress updates or streaming
@@ -1688,6 +1812,9 @@ async function handleChatSubmit(event) {
 
 // Create STT service instance
 const sttService = new SpeechToTextService();
+
+// Create TTS service instance
+const ttsService = new TextToSpeechService();
 
 // Track recording state
 let isRecording = false;
@@ -1782,6 +1909,24 @@ function updateMicButtonState(recording) {
     chatMicBtn.classList.remove('recording');
     chatMicBtn.setAttribute('aria-label', 'Start voice input');
     chatMicBtn.title = 'Start voice input';
+  }
+}
+
+/**
+ * Update TTS button visual state
+ * @param {boolean} enabled - Whether TTS is enabled
+ */
+function updateTTSButtonState(enabled) {
+  if (!chatSpeakerBtn) return;
+  
+  if (enabled) {
+    chatSpeakerBtn.classList.add('enabled');
+    chatSpeakerBtn.setAttribute('aria-label', 'Disable text-to-speech');
+    chatSpeakerBtn.title = 'Text-to-speech enabled (click to disable)';
+  } else {
+    chatSpeakerBtn.classList.remove('enabled');
+    chatSpeakerBtn.setAttribute('aria-label', 'Enable text-to-speech');
+    chatSpeakerBtn.title = 'Text-to-speech disabled (click to enable)';
   }
 }
 
@@ -2191,6 +2336,45 @@ async function initChat() {
     }
   }
   
+  // Text-to-speech speaker button
+  if (chatSpeakerBtn) {
+    // Define the click handler inline
+    chatSpeakerBtn.addEventListener("click", async function handleSpeakerClick() {
+      if (!ttsService) return;
+      
+      const newState = !ttsService.isEnabled();
+      ttsService.setEnabled(newState);
+      updateTTSButtonState(newState);
+      
+      // Save preference
+      chrome.storage.sync.set({ ttsEnabled: newState });
+      
+      // If disabling while speaking, stop current speech
+      if (!newState && ttsService.isSpeaking()) {
+        ttsService.stop();
+      }
+    });
+    
+    // Hide speaker button if TTS is not supported
+    if (!ttsService.isAvailable()) {
+      chatSpeakerBtn.style.display = 'none';
+    }
+    
+    // Load TTS settings from storage
+    chrome.storage.sync.get(['ttsEnabled', 'ttsSettings'], (result) => {
+      if (result.ttsEnabled !== undefined) {
+        ttsService.setEnabled(result.ttsEnabled);
+        updateTTSButtonState(result.ttsEnabled);
+      } else {
+        // Default: enabled
+        updateTTSButtonState(true);
+      }
+      if (result.ttsSettings) {
+        ttsService.updateSettings(result.ttsSettings);
+      }
+    });
+  }
+  
   // =========================
   // Spacebar hold-to-record functionality
   // =========================
@@ -2198,6 +2382,8 @@ async function initChat() {
   let spacebarPressed = false;
   let spacebarRecordingStarted = false;
   let wasRecordingWhenSpacebarPressed = false;
+  let spacebarPressTimer = null;
+  const SPACEBAR_LONG_PRESS_TIME = 1000; // 1 second in milliseconds
   
   /**
    * Check if spacebar recording should be active
@@ -2471,23 +2657,36 @@ async function initChat() {
       return;
     }
     
-    // Prevent default spacebar behavior (scrolling) when recording
-    // But only if we're not in an input field
-    if (!chatInputEl || document.activeElement !== chatInputEl) {
-      // Mark spacebar as pressed
-      if (!spacebarPressed) {
-        spacebarPressed = true;
-        
-        // Track if we were already recording when spacebar was pressed
-        wasRecordingWhenSpacebarPressed = isRecording;
-        
-        // Start recording if not already recording
+    // Only handle if we're not in the chat input field
+    // If in input field, allow normal spacebar behavior
+    if (chatInputEl && document.activeElement === chatInputEl) {
+      return; // Allow normal spacebar behavior in input field
+    }
+    
+    // Mark spacebar as pressed and start long press timer
+    if (!spacebarPressed) {
+      spacebarPressed = true;
+      
+      // Track if we were already recording when spacebar was pressed
+      wasRecordingWhenSpacebarPressed = isRecording;
+      
+      // Prevent default on initial press to prevent space insertion
+      // We'll allow it if it turns out to be a short press (in keyup handler)
+      event.preventDefault();
+      
+      // Start timer for long press detection
+      spacebarPressTimer = setTimeout(async function() {
+        // Long press detected - start transcription
         if (!isRecording) {
           await startSpacebarRecording();
         }
-      }
-      
-      // Prevent default to avoid scrolling when holding spacebar
+      }, SPACEBAR_LONG_PRESS_TIME);
+    } else if (isRecording || spacebarRecordingStarted) {
+      // Spacebar is still held after long press, prevent default
+      event.preventDefault();
+    } else {
+      // Spacebar is still pressed but timer hasn't fired yet
+      // Continue preventing default to avoid space insertion
       event.preventDefault();
     }
   });
@@ -2499,12 +2698,24 @@ async function initChat() {
       return;
     }
     
+    // Clear the long press timer if spacebar is released before threshold
+    if (spacebarPressTimer) {
+      clearTimeout(spacebarPressTimer);
+      spacebarPressTimer = null;
+    }
+    
     // Reset spacebar pressed state
     if (spacebarPressed) {
-      spacebarPressed = false;
+      // If we were recording (long press was detected), stop and send
+      if (isRecording && spacebarRecordingStarted) {
+        stopSpacebarRecordingAndSend();
+      } else {
+        // Short press - insert space manually since we prevented default
+        // This is mainly for the sidebar context, but shouldn't be needed
+        // since we return early if in chatInputEl
+      }
       
-      // Stop recording and send text
-      stopSpacebarRecordingAndSend();
+      spacebarPressed = false;
     }
   });
   
